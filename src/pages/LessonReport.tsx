@@ -971,6 +971,22 @@ useEffect(() => {
             });
           }
 
+          // Batch query 2b: student counts per course_instance_id
+          const allCourseInstanceIds = [...new Set([
+            ...directCourseInstanceIds,
+            ...[...scheduleMap.values()].map(ci => ci.id),
+          ].filter(Boolean))];
+          const studentCountMap = new Map();
+          if (allCourseInstanceIds.length > 0) {
+            const { data: studentRows } = await supabase
+              .from('students')
+              .select('course_instance_id')
+              .in('course_instance_id', allCourseInstanceIds);
+            (studentRows || []).forEach(s => {
+              studentCountMap.set(s.course_instance_id, (studentCountMap.get(s.course_instance_id) || 0) + 1);
+            });
+          }
+
           // Batch query 3: reporter profiles
           const reporterIds = [...new Set(data.filter(r => r.reported_by).map(r => r.reported_by))];
           const reporterMap = new Map();
@@ -1007,7 +1023,7 @@ useEffect(() => {
               course_instances: resolvedCourseInstance || report.course_instances,
               reported_by_name: reportedByName,
               reported_by_role: reportedRole,
-              totalStudents: resolvedCourseInstance?.max_participants ?? 0,
+              totalStudents: studentCountMap.get(resolvedCourseInstance?.id) ?? 0,
               attendanceData: attendanceData,
               participants_count: attendanceRecords.filter((r) => r.attended).length,
             };

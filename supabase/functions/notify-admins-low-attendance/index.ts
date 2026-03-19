@@ -6,12 +6,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-export const SUPABASE_URL = process.env.VITE_SUPABASE_URL
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-export const SUPABASE_PUBLISHABLE_KEY = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
-const BREVO_API_KEY = process.env.VITE_BREVO_API_KEY
+const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY')!
 
 
 
@@ -56,7 +55,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     console.log('✅ Supabase client created');
 
     // // For testing - replace with your actual email

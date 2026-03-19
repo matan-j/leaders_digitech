@@ -118,6 +118,7 @@ const [institutions, setInstitutions] = useState<{id: string, name: string}[]>([
   const [dateFrom, setDateFrom] = useState(undefined);
   const [dateTo, setDateTo] = useState(undefined);
   const [filteredReports, setFilteredReports] = useState([]);
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const navigate = useNavigate();
   const selectedDate = location.state?.selectedDate; // התאריך שנשלח מהיומן
 
@@ -940,108 +941,77 @@ useEffect(() => {
             variant: "destructive",
           });
         } else {
-          // Process reports to include attendance data from lesson_attendance table
-          const processedReports = await Promise.all(
-            data.map(async (report) => {
-              // Get course instance data from either lesson_schedule_id or course_instance_id
-              let courseInstanceData = null;
+          // --- Batch fetch: collect unique IDs upfront ---
+          const directCourseInstanceIds = [...new Set(
+            data.filter(r => r.course_instance_id).map(r => r.course_instance_id)
+          )];
+          const legacyScheduleIds = [...new Set(
+            data.filter(r => !r.course_instance_id && r.lesson_schedule_id).map(r => r.lesson_schedule_id)
+          )];
 
-              if (report.course_instance_id) {
-                // New architecture: direct course instance reference
-                const { data: courseInstance } = await supabase
-                  .from("course_instances")
-                  .select(
-                    `id,
-                                    students (
-                                        id,
-                                        full_name
-                                    )`
-                  )
-                  .eq("id", report.course_instance_id)
-                  .single();
+          // Batch query 1: course_instances (new arch)
+          const courseInstanceMap = new Map();
+          if (directCourseInstanceIds.length > 0) {
+            const { data: ciRows } = await supabase
+              .from('course_instances')
+              .select('id, max_participants, educational_institutions:institution_id (id, name)')
+              .in('id', directCourseInstanceIds);
+            (ciRows || []).forEach(ci => courseInstanceMap.set(ci.id, ci));
+          }
 
-                courseInstanceData = { course_instances: courseInstance };
-              } 
-               let reportedByName = null;
-               let reportedRole = null;
-    if (report.reported_by) {
-      const { data: reporterProfile } = await supabase
-        .from('profiles')
-        .select('full_name ,role')
-        .eq('id', report.reported_by)
-        .single();
-      
-      reportedByName = reporterProfile?.full_name || 'משתמש מערכת';
-      reportedRole = reporterProfile?.role || 'לא ידוע';
-    }
-else if (report.lesson_schedule_id) {
-                // Legacy architecture: get from lesson_schedule_id
-                // Try to get from new course_instance_schedules first
-                let { data: scheduleData } = await supabase
-                  .from("course_instance_schedules")
-                  .select(
-                    `course_instances (
-                                    id,
-                                    students (
-                                        id,
-                                        full_name
-                                    )
-                                )`
-                  )
-                  .eq("id", report.lesson_schedule_id)
-                  .single();
+          // Batch query 2: lesson_schedules (legacy arch)
+          const scheduleMap = new Map();
+          if (legacyScheduleIds.length > 0) {
+            const { data: lsRows } = await supabase
+              .from('lesson_schedules')
+              .select('id, course_instances!lesson_schedules_course_instance_id_fkey (id, max_participants, educational_institutions:institution_id (id, name))')
+              .in('id', legacyScheduleIds);
+            (lsRows || []).forEach(ls => {
+              if (ls.course_instances) scheduleMap.set(ls.id, ls.course_instances);
+            });
+          }
 
-                // If not found, try legacy lesson_schedules
-                if (!scheduleData) {
-                  const { data: legacyData } = await supabase
-                    .from("lesson_schedules")
-                    .select(
-                      `course_instances (
-                                        id,
-                                        students (
-                                            id,
-                                            full_name
-                                        )
-                                    )`
-                    )
-                    .eq("id", report.lesson_schedule_id)
-                    .single();
-                  scheduleData = legacyData;
-                }
+          // Batch query 3: reporter profiles
+          const reporterIds = [...new Set(data.filter(r => r.reported_by).map(r => r.reported_by))];
+          const reporterMap = new Map();
+          if (reporterIds.length > 0) {
+            const { data: profileRows } = await supabase
+              .from('profiles')
+              .select('id, full_name, role')
+              .in('id', reporterIds);
+            (profileRows || []).forEach(p => reporterMap.set(p.id, p));
+          }
 
-                courseInstanceData = scheduleData;
-              }
+          // Map each report using the lookup maps — zero additional queries
+          const processedReports = data.map((report) => {
+            let resolvedCourseInstance = null;
+            if (report.course_instance_id) {
+              resolvedCourseInstance = courseInstanceMap.get(report.course_instance_id) || null;
+            } else if (report.lesson_schedule_id) {
+              resolvedCourseInstance = scheduleMap.get(report.lesson_schedule_id) || null;
+            }
 
-              const allStudents =
-                courseInstanceData?.course_instances?.students || [];
-              const attendanceRecords = report.lesson_attendance || [];
+            const reporter = report.reported_by ? reporterMap.get(report.reported_by) : null;
+            const reportedByName = reporter?.full_name || null;
+            const reportedRole = reporter?.role || null;
 
-              // יצירת נתוני נוכחות מהטבלה החדשה
-              const attendanceData = allStudents.map((student) => {
-                const attendanceRecord = attendanceRecords.find(
-                  (record) => record.student_id === student.id
-                );
-                return {
-                  id: student.id,
-                  name: student.full_name,
-                  attended: attendanceRecord
-                    ? attendanceRecord.attended
-                    : false,
-                };
-              });
+            const attendanceRecords = report.lesson_attendance || [];
+            const attendanceData = attendanceRecords.map((record) => ({
+              id: record.student_id,
+              name: record.students?.full_name || 'לא ידוע',
+              attended: record.attended,
+            }));
 
-              return {
-                ...report,
-                reported_by_name: reportedByName,
-                reported_by_role: reportedRole,
-                totalStudents: allStudents.length,
-                attendanceData: attendanceData,
-                // חישוב מספר הנוכחים מתוך טבלת הנוכחות
-                participants_count: attendanceRecords.filter((r) => r.attended)
-                  .length,
-              };
-            })
-          );
+            return {
+              ...report,
+              course_instances: resolvedCourseInstance || report.course_instances,
+              reported_by_name: reportedByName,
+              reported_by_role: reportedRole,
+              totalStudents: resolvedCourseInstance?.max_participants ?? 0,
+              attendanceData: attendanceData,
+              participants_count: attendanceRecords.filter((r) => r.attended).length,
+            };
+          });
 
           setAllReports(processedReports || []);
           setFilteredReports(processedReports || []);
@@ -1055,7 +1025,7 @@ else if (report.lesson_schedule_id) {
 
   // Date filtering effect (admin only)
   useEffect(() => {
-    if (!isAdmin || !allReports.length) return;
+    if (!isAdminOrManager || !allReports.length) return;
 
     let filtered = [...allReports];
 
@@ -1074,7 +1044,7 @@ else if (report.lesson_schedule_id) {
     }
 
     setFilteredReports(filtered);
-  }, [dateFrom, dateTo, allReports, isAdmin]);
+  }, [dateFrom, dateTo, allReports, isAdminOrManager]);
 
   const clearDateFilters = () => {
     setDateFrom(undefined);
@@ -1717,7 +1687,7 @@ useEffect(() => {
 
 // עדכן את פונקציית הסינון
 useEffect(() => {
-  if (!isAdmin || !allReports.length) return;
+  if (!isAdminOrManager || !allReports.length) return;
 
   let filtered = [...allReports];
 
@@ -1778,7 +1748,7 @@ useEffect(() => {
   }
 
   setFilteredReports(filtered);
-}, [dateFrom, dateTo, selectedMonth, selectedInstructor, selectedCourse, selectedStatus, selectedInstitution, allReports, isAdmin]);
+}, [dateFrom, dateTo, selectedMonth, selectedInstructor, selectedCourse, selectedStatus, selectedInstitution, allReports, isAdminOrManager]);
 
 // פונקציה לניקוי כל המסננים
 const clearAllFilters = () => {
@@ -1793,7 +1763,6 @@ const clearAllFilters = () => {
 
 
 
-console.log('reports',filteredReports)
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="md:hidden">
@@ -2292,7 +2261,7 @@ console.log('reports',filteredReports)
         ) : (
           <div className="space-y-6 w-full ">
             {/* Date Filter for Admins */}
-          {isAdmin && (
+          {isAdminOrManager && (
   <Card className="border-primary/20 shadow-md">
     <CardHeader className="pb-4">
       <CardTitle className="flex items-center justify-between text-primary">
@@ -2300,14 +2269,24 @@ console.log('reports',filteredReports)
           <Filter className="h-5 w-5 ml-2" />
           סינונים מתקדמים
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={clearAllFilters}
-          className="text-sm"
-        >
-          נקה הכל
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSortOrder(o => o === 'desc' ? 'asc' : 'desc')}
+            className="text-sm"
+          >
+            {sortOrder === 'desc' ? '↓ חדש ראשון' : '↑ ישן ראשון'}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearAllFilters}
+            className="text-sm"
+          >
+            נקה הכל
+          </Button>
+        </div>
       </CardTitle>
     </CardHeader>
     <CardContent className="space-y-4">
@@ -2482,35 +2461,38 @@ console.log('reports',filteredReports)
       <CardHeader className="border-b border-border/50 bg-muted/10">
         <CardTitle className="flex items-center text-primary">
           <FileText className="h-5 w-5 ml-2" />
-          כל הדיווחים ({isAdmin ? filteredReports.length : allReports.length})
+          כל הדיווחים ({isAdminOrManager ? filteredReports.length : allReports.length})
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         {/* Desktop: No scroll, full width */}
-        <div className="md:block w-full">
+        <div className="md:block w-full overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="bg-primary/5 border-b-2 border-primary/20 hover:bg-primary/10">
                 <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm">שיעור מס'</TableHead>
-                <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm">כותרת השיעור</TableHead>
+                <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm min-w-[200px]">כותרת השיעור</TableHead>
                 <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm">קורס</TableHead>
                 <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm">מדריך</TableHead>
                 <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm">נוכחות</TableHead>
-                <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm">רשימת תלמידים</TableHead>
-                <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm">משימות שבוצעו</TableHead>
+                <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm whitespace-normal break-words max-w-[90px]">רשימת תלמידים</TableHead>
+                <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm whitespace-normal break-words max-w-[90px]">משימות שבוצעו</TableHead>
                 <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm">תאריך</TableHead>
                 <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm">מוסד</TableHead>
-                <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm">התנהל כשורה</TableHead>
-                <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm">סטטוס שיעור</TableHead>
+                <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm whitespace-normal break-words w-16">התנהל כשורה</TableHead>
+                <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm whitespace-normal break-words max-w-[80px]">סטטוס שיעור</TableHead>
                 <TableHead className="font-bold text-primary py-3 px-4 text-right text-sm">משוב</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-                        {(isAdmin ? filteredReports : allReports).map(
-                          (report, index) => (
-                           
-                            <React.Fragment key={report.id}>
-                              <TableRow
+                        {[...(isAdminOrManager ? filteredReports : allReports)]
+                          .sort((a, b) => {
+                            const diff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                            return sortOrder === 'desc' ? diff : -diff;
+                          })
+                          .map(
+                          (report, index) => [
+                            <TableRow key={report.id}
                                 className={`hover:bg-primary/5 transition-all duration-200 border-b border-border/30
                                                             ${
                                                               index % 2 === 0
@@ -2566,10 +2548,14 @@ console.log('reports',filteredReports)
                                     </div>
                                     <span className="font-bold text-lg">
                                       {report.participants_count || 0}
-                                      <span className="text-sm font-normal text-muted-foreground">
-                                        {" "}
-                                        מתוך {report.totalStudents || 0}
-                                      </span>
+                                      {report.totalStudents > 0 && (
+                                        <span className="text-sm font-normal text-muted-foreground">
+                                          {" "}מתוך {report.totalStudents}
+                                        </span>
+                                      )}
+                                      {!report.totalStudents && (
+                                        <span className="text-sm font-normal text-muted-foreground"> נוכחים</span>
+                                      )}
                                     </span>
                                   </div>
                                 </TableCell>
@@ -2647,7 +2633,7 @@ console.log('reports',filteredReports)
                                     </Badge>
                                   )}
                                 </TableCell>
-                                <TableCell className="px-12">
+                                <TableCell className="px-4 w-16">
                                   {report.is_lesson_ok ? (
                                     <Badge
                                       variant="default"
@@ -2711,10 +2697,9 @@ console.log('reports',filteredReports)
                                     צפה במשוב
                                   </Button>
                                 </TableCell>
-                              </TableRow>
-                              {/* Expandable row for attendance details */}
-                              {expandedRows.has(report.id) && (
-                                <TableRow>
+                              </TableRow>,
+                              expandedRows.has(report.id) && (
+                                <TableRow key={report.id + '-expanded'}>
                                   <TableCell
                                     colSpan={11}
                                     className="bg-gray-50 p-4"
@@ -2777,9 +2762,8 @@ console.log('reports',filteredReports)
                                     </div>
                                   </TableCell>
                                 </TableRow>
-                              )}
-                            </React.Fragment>
-                          )
+                              )
+                          ]
                         )}
                       </TableBody>
                     </Table>

@@ -62,12 +62,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const currentUserIdRef = React.useRef<string | undefined>(undefined);
 
   useEffect(() => {
     // This listener handles the initial session on page load AND any subsequent auth changes.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth state changed:', event, session);
+        const newUserId = session?.user?.id;
+        // Skip redundant INITIAL_SESSION if user is already set (prevents component remount)
+        if (event === 'INITIAL_SESSION' && newUserId === currentUserIdRef.current) {
+          setLoading(false);
+          return;
+        }
+        currentUserIdRef.current = newUserId;
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);

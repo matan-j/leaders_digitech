@@ -388,11 +388,6 @@ const handleExcelUpload = async (event: React.ChangeEvent<HTMLInputElement>) => 
           setMaxPar(data?.max_participants ?? null);
           setIsDoubleLesson(data?.is_double_lesson || false);
           setLessonsCount(data?.is_double_lesson ? 2 : 1);
-          console.log('[double lesson fetch]', {
-            courseInstanceId: courseInstanceIdFromUrl,
-            is_double_lesson: data?.is_double_lesson,
-            isDoubleLesson: data?.is_double_lesson || false,
-          });
           return;
         }
 
@@ -805,7 +800,7 @@ useEffect(() => {
         setIsCompleted(data.is_completed !== false);
         setCheckedTasks(data.completed_task_ids || []);
         setNotes(data.notes || "");
-        setFeedback(data.feedback || "");
+        setFeedback(data.feedback || data.notes || "");
         setMarketingConsent(data.marketing_consent || false);
         setLessonsCount(data.lessons_count ?? 1);
         
@@ -1166,15 +1161,6 @@ const handleSubmit = async () => {
     return;
   }
 
-  // Check if all tasks were completed - if not, notes are required
-  if (isCompleted && checkedTasks.length < lessonTasks.length && !notes.trim()) {
-    toast({
-      title: "שגיאה",
-      description: "נדרש להזין הערות כאשר לא כל המשימות בוצעו",
-      variant: "destructive",
-    });
-    return;
-  }
 
   // בדיקת משוב רק אם השיעור התקיים ולא התנהל כשורה
   if (isCompleted && !isLessonOk && !feedback.trim()) {
@@ -2170,7 +2156,7 @@ const clearAllFilters = () => {
                       className="w-4 h-4"
                     />
                     <label className="text-sm pr-1">
-                      האם השיעור התנהל כשורה?{" "}
+                      האם השיעור התנהל כשורה? (במידה ולא, אנא פרט במשוב){" "}
                     </label>
                   </div>
                 )}
@@ -2192,21 +2178,12 @@ const clearAllFilters = () => {
                 )}
 
                 <div>
-                  <Label htmlFor="notes">הערות נוספות</Label>
-                  <Textarea
-                    id="notes"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={3}
-                  />
-                </div>
-
-                <div>
                   <Label htmlFor="feedback">משוב כללי</Label>
                   <Textarea
                     id="feedback"
                     value={feedback}
                     required={isCompleted && !isLessonOk}
+                    placeholder={isLessonOk ? "אופציונלי — הערות נוספות" : "חובה — פרט מה קרה בשיעור"}
                     onChange={(e) => setFeedback(e.target.value)}
                     rows={3}
                   />

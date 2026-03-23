@@ -76,6 +76,7 @@ interface EditData {
   instructor_name: string;
   start_date: string;
   approx_end_date: string;
+  is_double_lesson?: boolean;
 }
 
 interface CourseAssignDialogProps {
@@ -158,6 +159,7 @@ const [draggedLessonIndex, setDraggedLessonIndex] = useState<number | null>(null
 const [lessonMode, setLessonMode] = useState<'template' | 'custom_only' | 'combined'|'none'>('template');
 const [isCombinedMode, setIsCombinedMode] = useState(false);
 const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+const [isDoubleLesson, setIsDoubleLesson] = useState(false);
 
   const isMounted = useRef(false);
   
@@ -179,6 +181,7 @@ const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   setCourseSchedule(initialState.courseSchedule);
   setInstanceLessons(initialState.instanceLessons);
   setHasCustomLessons(initialState.hasCustomLessons);
+  if (mode !== 'edit') setIsDoubleLesson(false);
   setStep(1);
 
   // טעינת הגדרות מערכת וקבצים חסומים
@@ -309,6 +312,7 @@ const loadSystemConfiguration = async () => {
         start_date: editData.start_date || "",
         end_date: editData.approx_end_date || "",
       });
+      setIsDoubleLesson(editData.is_double_lesson || false);
     }
   }, [editData, institutions, instructors, mode, open]);
 
@@ -573,6 +577,7 @@ const handleDragEnd = async () => {
       }
     };
 
+    if (!instanceId) return;
     fetchLessonMode();
   }, [instanceId]);
    
@@ -809,10 +814,11 @@ const handleCourseAssignment = async (): Promise<string | null> => {
             max_participants: parseInt(formData.max_participants) || null,
             price_for_customer: parseFloat(formData.price_for_customer) || null,
             price_for_instructor: parseFloat(formData.price_for_instructor) || null,
-            start_date: formData.start_date,
+            start_date: formData.start_date || null,
             end_date: formData.end_date || null,
             days_of_week: finalSchedule.days_of_week,
-            lesson_mode: lessonMode, // *** הוסף את זה ***
+            lesson_mode: lessonMode,
+            is_double_lesson: isDoubleLesson,
             schedule_pattern: {
               time_slots: finalSchedule.time_slots,
               total_lessons: finalSchedule.total_lessons,
@@ -836,7 +842,8 @@ const handleCourseAssignment = async (): Promise<string | null> => {
           start_date: formData.start_date,
           end_date: formData.end_date || null,
           days_of_week: finalSchedule.days_of_week,
-          lesson_mode: lessonMode, // *** הוסף את זה ***
+          lesson_mode: lessonMode,
+          is_double_lesson: isDoubleLesson,
           schedule_pattern: {
             time_slots: finalSchedule.time_slots,
             total_lessons: finalSchedule.total_lessons,
@@ -1605,6 +1612,14 @@ const renderSchedulingStep = () => {
             <div className="space-y-2">
               <Label htmlFor="lesson_duration">משך שיעור (דקות)</Label>
               <Input id="lesson_duration" type="number" min="15" step="15" value={courseSchedule.lesson_duration_minutes || ""} onChange={(e) => setCourseSchedule(prev => ({ ...prev, lesson_duration_minutes: parseInt(e.target.value) }))} placeholder="45" />
+            </div>
+            <div className="flex items-center gap-2 pt-6">
+              <Checkbox
+                id="is_double_lesson"
+                checked={isDoubleLesson}
+                onCheckedChange={(val) => setIsDoubleLesson(!!val)}
+              />
+              <Label htmlFor="is_double_lesson" className="cursor-pointer">שיעור כפול (90 דקות)</Label>
             </div>
           </div>
         </div>

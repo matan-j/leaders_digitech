@@ -82,6 +82,8 @@ const LessonReport = () => {
   const [isLessonOk, setIsLessonOk] = useState(false);
   const [isCompleted, setIsCompleted] = useState(true); // האם השיעור התקיים
   const [maxPar, setMaxPar] = useState(null);
+  const [isDoubleLesson, setIsDoubleLesson] = useState(false);
+  const [lessonsCount, setLessonsCount] = useState(1);
   const { user } = useAuth();
   const [selectedReport, setSelectedReport] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -374,7 +376,7 @@ const handleExcelUpload = async (event: React.ChangeEvent<HTMLInputElement>) => 
           // Fetch max participants for this course instance
           const { data, error } = await supabase
             .from("course_instances")
-            .select("max_participants")
+            .select("max_participants, is_double_lesson")
             .eq("id", courseInstanceIdFromUrl)
             .single();
 
@@ -384,6 +386,13 @@ const handleExcelUpload = async (event: React.ChangeEvent<HTMLInputElement>) => 
           }
 
           setMaxPar(data?.max_participants ?? null);
+          setIsDoubleLesson(data?.is_double_lesson || false);
+          setLessonsCount(data?.is_double_lesson ? 2 : 1);
+          console.log('[double lesson fetch]', {
+            courseInstanceId: courseInstanceIdFromUrl,
+            is_double_lesson: data?.is_double_lesson,
+            isDoubleLesson: data?.is_double_lesson || false,
+          });
           return;
         }
 
@@ -798,6 +807,7 @@ useEffect(() => {
         setNotes(data.notes || "");
         setFeedback(data.feedback || "");
         setMarketingConsent(data.marketing_consent || false);
+        setLessonsCount(data.lessons_count ?? 1);
         
         // Set attendance data
         if (data.lesson_attendance) {
@@ -1239,6 +1249,7 @@ const handleSubmit = async () => {
       is_lesson_ok: isCompleted ? isLessonOk : null,
       is_completed: isCompleted,
       completed_task_ids: checkedTasks,
+      lessons_count: lessonsCount,
       lesson_id: id,
     };
 
@@ -1622,7 +1633,7 @@ if (isCompleted && checkedTasks.length < lessonTasks.length) {
     toast({ title: "הצלחה!", description: "דיווח השיעור נשמר בהצלחה" });
 
     // Report work hour only after successful submission
-    const { error: workHourError } = await supabase.rpc('report_work_hour');
+    const { error: workHourError } = await supabase.rpc('report_work_hour', { p_lessons_count: lessonsCount });
     
     if (workHourError) {
       console.error('Error reporting work hour:', workHourError);
@@ -2161,6 +2172,22 @@ const clearAllFilters = () => {
                     <label className="text-sm pr-1">
                       האם השיעור התנהל כשורה?{" "}
                     </label>
+                  </div>
+                )}
+
+                {isCompleted && (
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="lessons_count">כמה שיעורים התקיימו?</Label>
+                    <select
+                      id="lessons_count"
+                      value={lessonsCount}
+                      onChange={(e) => setLessonsCount(Number(e.target.value))}
+                      className="border rounded px-2 py-1 text-sm w-32"
+                    >
+                      <option value={0}>0</option>
+                      <option value={1}>1</option>
+                      {isDoubleLesson && <option value={2}>2</option>}
+                    </select>
                   </div>
                 )}
 

@@ -90,6 +90,7 @@ interface CourseAssignment {
   presentation_link?: string;
   program_link?: string;
   lesson_mode?: 'template' | 'custom_only' | 'combined';
+  is_double_lesson?: boolean;
   // Include nested objects if needed by edit dialog or other logic
   course?: { id: string; name: string; school_type?: string; presentation_link?: string; program_link?: string };
   instructor?: { id: string; full_name: string };
@@ -275,7 +276,7 @@ const CourseAssignments = () => {
         .from("course_instances")
         .select(`
             id, grade_level, max_participants, price_for_customer, price_for_instructor,
-            start_date, end_date, created_at, lesson_mode, is_visible,
+            start_date, end_date, created_at, lesson_mode, is_visible, is_double_lesson,
             course:course_id!inner (id, name, school_type, presentation_link, program_link, is_visible),
             instructor:instructor_id (id, full_name),
             institution:institution_id (id, name)
@@ -426,7 +427,7 @@ const CourseAssignments = () => {
                 institution_name: instanceData.institution?.name || "לא צוין", instructor_name: instanceData.instructor?.full_name || "לא צוין",
                 lesson_count: courseLessons.length, start_date: instanceData.start_date, approx_end_date: instanceData.end_date,
                 school_type: course?.school_type, presentation_link: course?.presentation_link, program_link: course?.program_link,
-                lesson_mode: lessonMode, tasks: allCourseTasks, // Include the fully formatted tasks
+                lesson_mode: lessonMode, is_double_lesson: instanceData.is_double_lesson || false, tasks: allCourseTasks, // Include the fully formatted tasks
                 course: instanceData.course, instructor: instanceData.instructor, institution: instanceData.institution,
             };
         });
@@ -488,7 +489,7 @@ const CourseAssignments = () => {
              name: assignment.name, grade_level: assignment.grade_level, max_participants: assignment.max_participants,
              price_for_customer: assignment.price_for_customer, price_for_instructor: assignment.price_for_instructor,
              institution_name: assignment.institution_name, instructor_name: assignment.instructor_name,
-             start_date: assignment.start_date, approx_end_date: assignment.approx_end_date, lesson_mode: assignment.lesson_mode
+             start_date: assignment.start_date, approx_end_date: assignment.approx_end_date, lesson_mode: assignment.lesson_mode, is_double_lesson: assignment.is_double_lesson
          };
         setEditData(dialogEditData); setDialogMode("edit"); setSelectedCourse({ id: assignment.id, instanceId: assignment.instance_id, name: assignment.name }); console.log("Editing assignment, prepared data:", dialogEditData); setShowDialog(true);
     }, []);

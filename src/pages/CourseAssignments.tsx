@@ -82,6 +82,7 @@ interface CourseAssignment {
   price_for_customer: number;
   institution_name: string;
   instructor_name: string;
+  days_of_week: number[];
   lesson_count: number;
   tasks: Task[]; // Ensure this holds the full Task structure
   start_date: string;
@@ -91,15 +92,20 @@ interface CourseAssignment {
   program_link?: string;
   lesson_mode?: 'template' | 'custom_only' | 'combined';
   is_double_lesson?: boolean;
+  color?: string;
   // Include nested objects if needed by edit dialog or other logic
   course?: { id: string; name: string; school_type?: string; presentation_link?: string; program_link?: string };
   instructor?: { id: string; full_name: string };
   institution?: { id: string; name: string };
 }
 
+const getGradient = (color: string) =>
+  `linear-gradient(135deg, ${color}, ${color}aa)`;
+
 // Simple Cache for report statuses
 const statusCache = new Map<string, { data: Map<string, any>; timestamp: number }>();
 const CACHE_TTL = 30 * 1000; // 30 seconds
+const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 
 const CourseAssignments = () => {
   const { user } = useAuth();
@@ -277,9 +283,10 @@ const CourseAssignments = () => {
         .select(`
             id, grade_level, max_participants, price_for_customer, price_for_instructor,
             start_date, end_date, created_at, lesson_mode, is_visible, is_double_lesson,
-            course:course_id!inner (id, name, school_type, presentation_link, program_link, is_visible),
+            course:course_id!inner (id, name, school_type, presentation_link, program_link, is_visible, color),
             instructor:instructor_id (id, full_name),
-            institution:institution_id (id, name)
+            institution:institution_id (id, name),
+            course_instance_schedules (days_of_week)
         `, { count: 'exact' })
         .eq('is_visible', true) // Only show visible instances
         .eq('course.is_visible', true) // Only show instances of visible courses
@@ -422,11 +429,18 @@ const CourseAssignments = () => {
 
             return { // Return the full CourseAssignment structure
                 id: course?.id || '', instance_id: instanceData.id, name: course?.name || "ללא שם קורס",
-                grade_level: instanceData.grade_level || "לא צוין", max_participants: instanceData.max_participants || 0,
+                grade_level: instanceData.grade_level || "", max_participants: instanceData.max_participants || 0,
                 price_for_customer: instanceData.price_for_customer || 0, price_for_instructor: instanceData.price_for_instructor || 0,
                 institution_name: instanceData.institution?.name || "לא צוין", instructor_name: instanceData.instructor?.full_name || "לא צוין",
+                days_of_week: (() => {
+                  const s = instanceData.course_instance_schedules as any;
+                  if (!s) return [];
+                  if (Array.isArray(s)) return s[0]?.days_of_week || [];
+                  return s.days_of_week || [];
+                })(),
                 lesson_count: courseLessons.length, start_date: instanceData.start_date, approx_end_date: instanceData.end_date,
                 school_type: course?.school_type, presentation_link: course?.presentation_link, program_link: course?.program_link,
+                color: (course as any)?.color || '#574a7a',
                 lesson_mode: lessonMode, is_double_lesson: instanceData.is_double_lesson || false, tasks: allCourseTasks, // Include the fully formatted tasks
                 course: instanceData.course, instructor: instanceData.instructor, institution: instanceData.institution,
             };
@@ -601,7 +615,7 @@ const CourseAssignments = () => {
         <div className="space-y-8">
           {paginatedAssignments.map((assignment) => (
             <Card key={assignment.instance_id} className="shadow-xl border-0 backdrop-blur-sm bg-white/80 transition-shadow duration-300 hover:shadow-2xl overflow-hidden">
-              <CardHeader className="text-white rounded-t-lg bg-gradient-to-r from-blue-600 to-blue-700 p-4 sm:p-6"> {/* Adjusted padding */}
+              <CardHeader className="text-white rounded-t-lg p-4 sm:p-6" style={{ background: getGradient(assignment.color || '#574a7a') }}> {/* Adjusted padding */}
                    <div className="flex justify-between items-start">
                         {/* Left Side: Info */}
                         <div className="flex-1 min-w-0 pr-4">
@@ -617,6 +631,11 @@ const CourseAssignments = () => {
                             <CardDescription className="text-blue-100 text-sm sm:text-base mt-2 break-words"> {/* Adjusted font size */}
                                 {assignment.institution_name} • מדריך: {assignment.instructor_name} • כיתה: {assignment.grade_level}
                             </CardDescription>
+                            {assignment.days_of_week?.length > 0 && (
+                              <p className="text-blue-200 text-sm mt-1">
+                                📅 {assignment.days_of_week.map(d => DAY_NAMES[d]).join(', ')}
+                              </p>
+                            )}
                         </div>
                          {/* Right Side: Action Buttons */}
                         <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 items-end flex-shrink-0">

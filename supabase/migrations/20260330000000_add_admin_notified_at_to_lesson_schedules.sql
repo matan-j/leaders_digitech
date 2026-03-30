@@ -1,0 +1,1 @@
+ALTER TABLE lesson_schedules ADD COLUMN IF NOT EXISTS admin_notified_at TIMESTAMPTZ DEFAULT NULL;

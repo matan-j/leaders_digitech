@@ -41,6 +41,7 @@ const CourseCreateDialog = ({ open, onOpenChange, onCourseCreated, editCourse }:
     school_type: '',
     presentation_link: '',
     program_link: '',
+    color: '#574a7a',
   });
 
   useEffect(() => {
@@ -52,6 +53,7 @@ const CourseCreateDialog = ({ open, onOpenChange, onCourseCreated, editCourse }:
           school_type: editCourse.school_type || '',
           presentation_link: (editCourse as any).presentation_link || '',
           program_link: (editCourse as any).program_link || '',
+          color: (editCourse as any).color || '#574a7a',
         });
         
         loadExistingLessons(editCourse.id);
@@ -62,11 +64,12 @@ const CourseCreateDialog = ({ open, onOpenChange, onCourseCreated, editCourse }:
           school_type: '',
           presentation_link: '',
           program_link: '',
+          color: '#574a7a',
         });
         setLessons([]);
       }
     }
-  }, []);
+  }, [open, editCourse]);
 
   const loadExistingLessons = async (courseId: string) => {
     try {

@@ -1583,7 +1583,7 @@ export const postponeScheduleToNextDay = async (
         .from('course_instance_schedules')
         .select('*')
         .eq('course_instance_id', originalSchedule.course_instance_id)
-        .single();
+        .maybeSingle();
 
       console.log('[postponeSchedule] Direct pattern query result:', directPattern, 'error:', directError);
 

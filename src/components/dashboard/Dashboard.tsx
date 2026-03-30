@@ -31,6 +31,7 @@ import { useNavigate } from "react-router-dom";
 import { StatsCard } from "../StatsCard";
 import MobileNavigation from "../layout/MobileNavigation";
 import LeadsStatsCard from "./LeadsStatsCard";
+import { useUnreportedLessons } from "@/hooks/useUnreportedLessons";
 
 interface DashboardStats {
   totalLessons: number;
@@ -55,6 +56,9 @@ export interface ClassItem {
 
 const Dashboard = () => {
   const { user } = useAuth();
+  const isInstructor = user?.user_metadata?.role === 'instructor';
+  const unreportedCount = useUnreportedLessons(user?.id, isInstructor);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   const [stats, setStats] = useState<DashboardStats>({
     totalLessons: 0,
     activeStudents: 0,
@@ -341,6 +345,17 @@ const menuItems = [
 return (
   <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 mb-12">
     <><MobileNavigation/></>
+    {isInstructor && !bannerDismissed && unreportedCount > 0 && (
+      <div className="bg-amber-50 border-b border-amber-200 px-4 py-3 flex items-center justify-between" dir="rtl">
+        <button
+          onClick={() => nav('/lesson-report')}
+          className="text-amber-800 font-medium text-sm hover:underline"
+        >
+          יש לך {unreportedCount} שיעורים שטרם דווחו — לחץ כאן להגשת דיווח
+        </button>
+        <button onClick={() => setBannerDismissed(true)} className="text-amber-500 hover:text-amber-700 text-lg leading-none pr-2">×</button>
+      </div>
+    )}
     <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 md:py-8 space-y-6 md:space-y-8">
       
       {/* Welcome Section */}

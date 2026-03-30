@@ -24,6 +24,7 @@ import type { Json } from "@/integrations/supabase/types";
 import { Badge } from "@/components/ui/badge";
 import CourseLessonsSection, { Lesson } from "./course/CourseLessonsSection";
 import { Settings,  Layers, Plus } from "lucide-react";
+import AddInstitutionModal from "@/components/institutions/AddInstitutionModal";
 import { Calendar1, Clock, BookOpen, GripVertical, Trash2 } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -56,6 +57,14 @@ interface TimeSlot {
   start_time: string;
   end_time: string;
   [key: string]: Json | undefined;
+}
+
+interface ClassSection {
+  grade_level: string;
+  days_of_week: number[];
+  time_slots: TimeSlot[];
+  lesson_duration_minutes: number;
+  is_double_lesson: boolean;
 }
 
 interface CourseInstanceSchedule {
@@ -142,6 +151,7 @@ const CourseAssignDialog = ({
   const {user}=useAuth();
   const isAdmin = ['admin'].includes(user?.user_metadata?.role);
   const [institutions, setInstitutions] = useState<Institution[]>([]);
+  const [showAddInstitution, setShowAddInstitution] = useState(false);
   const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
@@ -160,6 +170,9 @@ const [lessonMode, setLessonMode] = useState<'template' | 'custom_only' | 'combi
 const [isCombinedMode, setIsCombinedMode] = useState(false);
 const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
 const [isDoubleLesson, setIsDoubleLesson] = useState(false);
+const [classes, setClasses] = useState<ClassSection[]>([
+  { grade_level: '', days_of_week: [], time_slots: [], lesson_duration_minutes: 45, is_double_lesson: false }
+]);
 
   const isMounted = useRef(false);
   
@@ -182,6 +195,9 @@ const [isDoubleLesson, setIsDoubleLesson] = useState(false);
   setInstanceLessons(initialState.instanceLessons);
   setHasCustomLessons(initialState.hasCustomLessons);
   if (mode !== 'edit') setIsDoubleLesson(false);
+  if (mode !== 'edit') setClasses([
+    { grade_level: '', days_of_week: [], time_slots: [], lesson_duration_minutes: 45, is_double_lesson: false }
+  ]);
   setStep(1);
 
   // טעינת הגדרות מערכת וקבצים חסומים
@@ -239,6 +255,11 @@ const loadSystemConfiguration = async () => {
       lesson_duration_minutes: defaults.default_lesson_duration,
       task_duration_minutes: defaults.default_task_duration,
     }));
+    if (mode !== 'edit') {
+      setClasses(prev => prev.map((cls, i) =>
+        i === 0 ? { ...cls, lesson_duration_minutes: defaults.default_lesson_duration } : cls
+      ));
+    }
     
     // Load disabled dates for calendar
     const disabled = await getDisabledDatesForCalendar();
@@ -461,7 +482,7 @@ const fetchExistingSchedule = async () => {
       .from("course_instance_schedules")
       .select("*")
       .eq("course_instance_id", editData.instance_id)
-      .single();
+      .maybeSingle();
 
     if (scheduleData && !scheduleError) {
       const durMinutes = (scheduleData as any).lesson_duration_minutes;
@@ -793,14 +814,41 @@ const resetInstanceLessons = async () => {
   };
 
  
-const handleCourseAssignment = async (): Promise<string | null> => {
+const updateClass = (classIdx: number, field: keyof ClassSection, value: any) => {
+  setClasses(prev => prev.map((cls, i) => i === classIdx ? { ...cls, [field]: value } : cls));
+};
+
+const toggleClassDayOfWeek = (classIdx: number, dayIndex: number) => {
+  setClasses(prev => prev.map((cls, i) => {
+    if (i !== classIdx) return cls;
+    if (cls.days_of_week.includes(dayIndex)) {
+      return { ...cls, days_of_week: cls.days_of_week.filter(d => d !== dayIndex), time_slots: cls.time_slots.filter(ts => ts.day !== dayIndex) };
+    }
+    return { ...cls, days_of_week: [...cls.days_of_week, dayIndex].sort(), time_slots: [...cls.time_slots, { day: dayIndex, start_time: "08:00", end_time: "08:45" }] };
+  }));
+};
+
+const updateClassTimeSlot = (classIdx: number, dayIndex: number, field: "start_time" | "end_time", value: string) => {
+  setClasses(prev => prev.map((cls, i) =>
+    i !== classIdx ? cls : { ...cls, time_slots: cls.time_slots.map(ts => ts.day === dayIndex ? { ...ts, [field]: value } : ts) }
+  ));
+};
+
+const handleCourseAssignment = async (classData?: ClassSection): Promise<string | null> => {
+  const gradeLevel = classData?.grade_level ?? formData.grade_level;
+  const daysOfWeek = classData?.days_of_week ?? courseSchedule.days_of_week;
+  const timeSlotsData = classData?.time_slots ?? courseSchedule.time_slots;
+  const lessonDuration = classData?.lesson_duration_minutes ?? courseSchedule.lesson_duration_minutes;
+  const doubleLesson = classData?.is_double_lesson ?? isDoubleLesson;
+
   const finalSchedule = {
-    ...courseSchedule,
+    days_of_week: daysOfWeek,
+    time_slots: timeSlotsData,
     total_lessons: hasCustomLessons ? instanceLessons.length : templateLessons.length,
+    lesson_duration_minutes: lessonDuration,
   };
 
-  // *** קבע את lesson_mode הנכון ***
- 
+
 
   try {
     if (mode === 'create') {
@@ -810,7 +858,7 @@ const handleCourseAssignment = async (): Promise<string | null> => {
             course_id: courseId,
             institution_id: formData.institution_id,
             instructor_id: formData.instructor_id,
-            grade_level: formData.grade_level,
+            grade_level: gradeLevel,
             max_participants: parseInt(formData.max_participants) || null,
             price_for_customer: parseFloat(formData.price_for_customer) || null,
             price_for_instructor: parseFloat(formData.price_for_instructor) || null,
@@ -818,7 +866,7 @@ const handleCourseAssignment = async (): Promise<string | null> => {
             end_date: formData.end_date || null,
             days_of_week: finalSchedule.days_of_week,
             lesson_mode: lessonMode,
-            is_double_lesson: isDoubleLesson,
+            is_double_lesson: doubleLesson,
             schedule_pattern: {
               time_slots: finalSchedule.time_slots,
               total_lessons: finalSchedule.total_lessons,
@@ -835,7 +883,7 @@ const handleCourseAssignment = async (): Promise<string | null> => {
         .update({
           institution_id: formData.institution_id,
           instructor_id: formData.instructor_id,
-          grade_level: formData.grade_level,
+          grade_level: gradeLevel,
           max_participants: parseInt(formData.max_participants) || null,
           price_for_customer: parseFloat(formData.price_for_customer) || null,
           price_for_instructor: parseFloat(formData.price_for_instructor) || null,
@@ -843,7 +891,7 @@ const handleCourseAssignment = async (): Promise<string | null> => {
           end_date: formData.end_date || null,
           days_of_week: finalSchedule.days_of_week,
           lesson_mode: lessonMode,
-          is_double_lesson: isDoubleLesson,
+          is_double_lesson: doubleLesson,
           schedule_pattern: {
             time_slots: finalSchedule.time_slots,
             total_lessons: finalSchedule.total_lessons,
@@ -868,15 +916,20 @@ const handleCourseAssignment = async (): Promise<string | null> => {
 };
  
   
-const saveCourseInstanceSchedule = async (instanceId: string) => {
+const saveCourseInstanceSchedule = async (instanceId: string, classData?: ClassSection) => {
+  const daysOfWeek = classData?.days_of_week ?? courseSchedule.days_of_week;
+  const timeSlotsInput = classData?.time_slots ?? courseSchedule.time_slots;
+  const lessonDuration = classData?.lesson_duration_minutes ?? courseSchedule.lesson_duration_minutes;
   try {
     const { data: existingSchedule } = await supabase
       .from("course_instance_schedules")
       .select("*")
       .eq("course_instance_id", instanceId)
-      .single();
+      .maybeSingle();
 
-    const adjustedTimeSlots = courseSchedule.time_slots.map(timeSlot => {
+    const adjustedTimeSlots = timeSlotsInput.map(timeSlot => {
+      if (!formData.start_date) return timeSlot;
+
       const startDate = new Date(formData.start_date + 'T00:00:00');
       let targetDate = new Date(startDate);
       
@@ -915,21 +968,18 @@ const saveCourseInstanceSchedule = async (instanceId: string) => {
 
     const scheduleData = {
       course_instance_id: instanceId,
-      days_of_week: courseSchedule.days_of_week,
+      days_of_week: daysOfWeek,
       time_slots: adjustedTimeSlots,
       total_lessons: totalLessonsCount, // Use the corrected count
-      lesson_duration_minutes: courseSchedule.lesson_duration_minutes,
+      lesson_duration_minutes: lessonDuration,
     };
 
     const { error } = await supabase
       .from("course_instance_schedules")
       .upsert(scheduleData, { onConflict: 'course_instance_id' });
-    
+
     if (error) throw error;
-    
-    console.log(`Schedule saved with ${totalLessonsCount} total lessons`);
   } catch (error) {
-    console.error("Error saving course instance schedule:", error);
     throw error;
   }
 };
@@ -1138,146 +1188,144 @@ const handleFinalSave = async () => {
   try {
     console.log('[handleFinalSave] START - lessonMode:', lessonMode, 'hasCustomLessons:', hasCustomLessons, 'instanceLessons.length:', instanceLessons.length);
 
-    // שלב 1: שמור/עדכן את ההקצאה
-    const newInstanceId = await handleCourseAssignment();
-    if (!newInstanceId) throw new Error("Failed to create or update course instance.");
-    console.log("[handleFinalSave] Course instance saved with ID:", newInstanceId, "lesson_mode:", lessonMode);
+    const runForClass = async (classData?: ClassSection) => {
+      // שלב 1: שמור/עדכן את ההקצאה
+      const newInstanceId = await handleCourseAssignment(classData);
+      if (!newInstanceId) throw new Error("Failed to create or update course instance.");
+      console.log("[handleFinalSave] Course instance saved with ID:", newInstanceId, "lesson_mode:", lessonMode);
 
-    // שלב 2: שמור את לוח הזמנים
-    await saveCourseInstanceSchedule(newInstanceId);
+      // שלב 2: שמור את לוח הזמנים
+      await saveCourseInstanceSchedule(newInstanceId, classData);
 
-    // *** שלב 2.5: טיפול בשיעורים ייחודיים ***
-    console.log('[handleFinalSave] Checking lesson mode - lessonMode:', lessonMode, 'hasCustomLessons:', hasCustomLessons, 'instanceLessons.length:', instanceLessons.length);
+      // *** שלב 2.5: טיפול בשיעורים ייחודיים ***
+      console.log('[handleFinalSave] Checking lesson mode - lessonMode:', lessonMode, 'hasCustomLessons:', hasCustomLessons, 'instanceLessons.length:', instanceLessons.length);
 
-    if (lessonMode === 'template') {
-      // אם המצב הוא 'template', מחק את כל השיעורים הייחודיים (אם קיימים)
-      console.log('[handleFinalSave] Mode is TEMPLATE - ensuring no custom lessons exist in DB');
-      try {
-        // First check if there are any custom lessons in DB
-        const { data: existingLessons } = await supabase
-          .from('lessons')
-          .select('id')
-          .eq('course_instance_id', newInstanceId);
+      if (lessonMode === 'template') {
+        // אם המצב הוא 'template', מחק את כל השיעורים הייחודיים (אם קיימים)
+        console.log('[handleFinalSave] Mode is TEMPLATE - ensuring no custom lessons exist in DB');
+        try {
+          const { data: existingLessons } = await supabase
+            .from('lessons')
+            .select('id')
+            .eq('course_instance_id', newInstanceId);
 
-        if (existingLessons && existingLessons.length > 0) {
-          console.log('[handleFinalSave] Found', existingLessons.length, 'custom lessons to delete for template mode');
-          const lessonIds = existingLessons.map(l => l.id);
-
-          // Delete schedules
-          await supabase.from('lesson_schedules').delete().in('lesson_id', lessonIds);
-          // Delete tasks
-          await supabase.from('lesson_tasks').delete().in('lesson_id', lessonIds);
-          // Delete lessons
-          await supabase.from('lessons').delete().eq('course_instance_id', newInstanceId);
-
-          console.log('[handleFinalSave] ✅ Deleted all custom lessons for template mode');
-        } else {
-          console.log('[handleFinalSave] ✅ No custom lessons to delete (already clean)');
-        }
-      } catch (error) {
-        console.error('[handleFinalSave] Error cleaning custom lessons for template mode:', error);
-      }
-    } else if (hasCustomLessons && instanceLessons.length > 0) {
-      // אם יש שיעורים ייחודיים, שמור אותם
-      console.log('[handleFinalSave] ✅ WILL SAVE instance lessons. Lessons:', instanceLessons.map(l => ({ id: l.id, title: l.title })));
-      await saveInstanceLessons(newInstanceId);
-      console.log('[handleFinalSave] Instance lessons saved successfully');
-    } else {
-      console.log('[handleFinalSave] ❌ No instance lessons to save');
-    }
-
-    // שלב 3: Generate/Update physical schedules (אחרי שהשיעורים נשמרו!)
-    try {
-      // Fetch the saved schedule pattern
-      const { data: schedulePattern, error: scheduleError } = await supabase
-        .from('course_instance_schedules')
-        .select(`
-          *,
-          course_instances:course_instance_id (
-            course_id,
-            start_date,
-            end_date,
-            lesson_mode
-          )
-        `)
-        .eq('course_instance_id', newInstanceId)
-        .single();
-
-      if (scheduleError) throw scheduleError;
-
-      if (schedulePattern) {
-        const currentLessonMode = schedulePattern.course_instances.lesson_mode || lessonMode;
-
-        // Fetch lessons based on lesson_mode (עכשיו הם כבר ב-DB!)
-        const { data: instLessons } = await supabase
-          .from('lessons')
-          .select('id, title, course_id, order_index, course_instance_id')
-          .eq('course_instance_id', newInstanceId)
-          .order('order_index');
-
-        const { data: templLessons } = await supabase
-          .from('lessons')
-          .select('id, title, course_id, order_index, course_instance_id')
-          .eq('course_id', schedulePattern.course_instances.course_id)
-          .is('course_instance_id', null)
-          .order('order_index');
-
-        console.log('[CourseAssignDialog] Fetched lessons - instLessons:', instLessons?.length || 0, 'templLessons:', templLessons?.length || 0);
-
-        let lessonsForScheduling: any[] = [];
-        switch (currentLessonMode) {
-          case 'custom_only':
-            lessonsForScheduling = instLessons || [];
-            console.log('[CourseAssignDialog] Using custom_only lessons:', lessonsForScheduling.length);
-            break;
-          case 'combined':
-            lessonsForScheduling = [...(templLessons || []), ...(instLessons || [])]
-              .sort((a, b) => a.order_index - b.order_index);
-            console.log('[CourseAssignDialog] Using combined lessons:', lessonsForScheduling.length);
-            break;
-          case 'template':
-          default:
-            lessonsForScheduling = templLessons || [];
-            console.log('[CourseAssignDialog] Using template lessons:', lessonsForScheduling.length);
-            break;
-        }
-
-        if (lessonsForScheduling.length > 0) {
-          if (mode === 'edit') {
-            // Update existing physical schedules
-            console.log('[CourseAssignDialog] Updating physical schedules...');
-            const result = await updatePhysicalSchedules(schedulePattern.id, newInstanceId);
-            console.log('[CourseAssignDialog] Update result:', result.message);
+          if (existingLessons && existingLessons.length > 0) {
+            console.log('[handleFinalSave] Found', existingLessons.length, 'custom lessons to delete for template mode');
+            const lessonIds = existingLessons.map(l => l.id);
+            await supabase.from('lesson_schedules').delete().in('lesson_id', lessonIds);
+            await supabase.from('lesson_tasks').delete().in('lesson_id', lessonIds);
+            await supabase.from('lessons').delete().eq('course_instance_id', newInstanceId);
+            console.log('[handleFinalSave] ✅ Deleted all custom lessons for template mode');
           } else {
-            // Generate new physical schedules
-            console.log('[CourseAssignDialog] Generating physical schedules...');
-            const physicalSchedules = await generatePhysicalSchedulesFromPattern(
-              {
-                id: schedulePattern.id,
-                course_instance_id: newInstanceId,
-                days_of_week: schedulePattern.days_of_week,
-                time_slots: schedulePattern.time_slots,
-                total_lessons: schedulePattern.total_lessons,
-                lesson_duration_minutes: schedulePattern.lesson_duration_minutes,
-              },
-              lessonsForScheduling,
-              schedulePattern.course_instances.start_date,
-              schedulePattern.course_instances.end_date
-            );
-            console.log('[CourseAssignDialog] Generated physical schedules:', physicalSchedules.length);
+            console.log('[handleFinalSave] ✅ No custom lessons to delete (already clean)');
           }
-        } else {
-          console.warn('[CourseAssignDialog] No lessons found for scheduling! lessonMode:', currentLessonMode);
+        } catch (error) {
+          console.error('[handleFinalSave] Error cleaning custom lessons for template mode:', error);
         }
+      } else if (hasCustomLessons && instanceLessons.length > 0) {
+        console.log('[handleFinalSave] ✅ WILL SAVE instance lessons. Lessons:', instanceLessons.map(l => ({ id: l.id, title: l.title })));
+        await saveInstanceLessons(newInstanceId);
+        console.log('[handleFinalSave] Instance lessons saved successfully');
+      } else {
+        console.log('[handleFinalSave] ❌ No instance lessons to save');
       }
-    } catch (physicalScheduleError) {
-      console.error('[CourseAssignDialog] Error with physical schedules:', physicalScheduleError);
-      // Don't fail the whole operation if physical schedules fail
-      toast({
-        title: "אזהרה",
-        description: "לוח הזמנים נשמר אך היה שגיאה ביצירת לוחות הזמנים הפיזיים",
-        variant: "destructive"
-      });
+
+      // שלב 3: Generate/Update physical schedules (אחרי שהשיעורים נשמרו!)
+      try {
+        const { data: schedulePattern, error: scheduleError } = await supabase
+          .from('course_instance_schedules')
+          .select(`
+            *,
+            course_instances:course_instance_id (
+              course_id,
+              start_date,
+              end_date,
+              lesson_mode
+            )
+          `)
+          .eq('course_instance_id', newInstanceId)
+          .maybeSingle();
+
+        if (scheduleError) throw scheduleError;
+
+        if (schedulePattern) {
+          const currentLessonMode = schedulePattern.course_instances.lesson_mode || lessonMode;
+
+          const { data: instLessons } = await supabase
+            .from('lessons')
+            .select('id, title, course_id, order_index, course_instance_id')
+            .eq('course_instance_id', newInstanceId)
+            .order('order_index');
+
+          const { data: templLessons } = await supabase
+            .from('lessons')
+            .select('id, title, course_id, order_index, course_instance_id')
+            .eq('course_id', schedulePattern.course_instances.course_id)
+            .is('course_instance_id', null)
+            .order('order_index');
+
+          console.log('[CourseAssignDialog] Fetched lessons - instLessons:', instLessons?.length || 0, 'templLessons:', templLessons?.length || 0);
+
+          let lessonsForScheduling: any[] = [];
+          switch (currentLessonMode) {
+            case 'custom_only':
+              lessonsForScheduling = instLessons || [];
+              console.log('[CourseAssignDialog] Using custom_only lessons:', lessonsForScheduling.length);
+              break;
+            case 'combined':
+              lessonsForScheduling = [...(templLessons || []), ...(instLessons || [])]
+                .sort((a, b) => a.order_index - b.order_index);
+              console.log('[CourseAssignDialog] Using combined lessons:', lessonsForScheduling.length);
+              break;
+            case 'template':
+            default:
+              lessonsForScheduling = templLessons || [];
+              console.log('[CourseAssignDialog] Using template lessons:', lessonsForScheduling.length);
+              break;
+          }
+
+          if (lessonsForScheduling.length > 0) {
+            if (mode === 'edit') {
+              console.log('[CourseAssignDialog] Updating physical schedules...');
+              const result = await updatePhysicalSchedules(schedulePattern.id, newInstanceId);
+              console.log('[CourseAssignDialog] Update result:', result.message);
+            } else {
+              console.log('[CourseAssignDialog] Generating physical schedules...');
+              const physicalSchedules = await generatePhysicalSchedulesFromPattern(
+                {
+                  id: schedulePattern.id,
+                  course_instance_id: newInstanceId,
+                  days_of_week: schedulePattern.days_of_week,
+                  time_slots: schedulePattern.time_slots,
+                  total_lessons: schedulePattern.total_lessons,
+                  lesson_duration_minutes: schedulePattern.lesson_duration_minutes,
+                },
+                lessonsForScheduling,
+                schedulePattern.course_instances.start_date,
+                schedulePattern.course_instances.end_date
+              );
+              console.log('[CourseAssignDialog] Generated physical schedules:', physicalSchedules.length);
+            }
+          } else {
+            console.warn('[CourseAssignDialog] No lessons found for scheduling! lessonMode:', currentLessonMode);
+          }
+        }
+      } catch (physicalScheduleError) {
+        console.error('[CourseAssignDialog] Error with physical schedules:', physicalScheduleError);
+        toast({
+          title: "אזהרה",
+          description: "לוח הזמנים נשמר אך היה שגיאה ביצירת לוחות הזמנים הפיזיים",
+          variant: "destructive"
+        });
+      }
+    };
+
+    if (mode === 'edit') {
+      await runForClass();
+    } else {
+      for (const cls of classes) {
+        await runForClass(cls);
+      }
     }
 
     // שלב 4: הודעת הצלחה
@@ -1290,7 +1338,7 @@ const handleFinalSave = async () => {
     } else {
       toast({
         title: "הצלחה",
-        description: mode === 'edit' ? "התוכנית עודכנה בהצלחה!" : "התוכנית נוצרה בהצלחה!",
+        description: mode === 'edit' ? "התוכנית עודכנה בהצלחה!" : classes.length > 1 ? `נוצרו ${classes.length} הקצאות בהצלחה!` : "התוכנית נוצרה בהצלחה!",
         variant: "default"
       });
     }
@@ -1320,7 +1368,7 @@ const handleFinalSave = async () => {
         const missingFields = [];
         if (!formData.institution_id) missingFields.push("מוסד");
         if (!formData.instructor_id) missingFields.push("מדריך");
-        if (!formData.grade_level.trim()) missingFields.push("כיתה");
+        if (mode === 'edit' && !formData.grade_level.trim()) missingFields.push("כיתה");
         if (missingFields.length > 0) {
           toast({ title: "שגיאה בטופס", description: `חסרים שדות חובה: ${missingFields.join(", ")}`, variant: "destructive" });
           return;
@@ -1331,7 +1379,18 @@ const handleFinalSave = async () => {
     >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="institution">מוסד חינוכי</Label>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="institution">מוסד חינוכי</Label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
+              onClick={() => setShowAddInstitution(true)}
+            >
+              + הוסף מוסד
+            </Button>
+          </div>
           <Select value={formData.institution_id} onValueChange={(value) => handleInputChange("institution_id", value)}>
             <SelectTrigger><SelectValue placeholder="בחר מוסד חינוכי" /></SelectTrigger>
             <SelectContent>
@@ -1350,10 +1409,12 @@ const handleFinalSave = async () => {
           </Select>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="grade_level">כיתה</Label>
-          <Input id="grade_level" value={formData.grade_level} onChange={(e) => handleInputChange("grade_level", e.target.value)} placeholder="למשל: כיתה ז'"/>
-        </div>
+        {mode === 'edit' && (
+          <div className="space-y-2">
+            <Label htmlFor="grade_level">כיתה</Label>
+            <Input id="grade_level" value={formData.grade_level} onChange={(e) => handleInputChange("grade_level", e.target.value)} placeholder="למשל: כיתה ז'"/>
+          </div>
+        )}
 {isAdmin &&<>  
         <div className="space-y-2">
           <Label htmlFor="price_for_customer">מחיר ללקוח</Label>
@@ -1390,7 +1451,7 @@ const handleFinalSave = async () => {
         selected={formData.start_date ? new Date(formData.start_date) : undefined}
         onSelect={(date) => {
           if (date) {
-            handleInputChange("start_date", date.toISOString().split('T')[0]);
+            handleInputChange("start_date", date.toLocaleDateString('en-CA'));
           }
         }}
         disabled={(date) => {
@@ -1436,7 +1497,7 @@ const handleFinalSave = async () => {
         selected={formData.end_date ? new Date(formData.end_date) : undefined}
         onSelect={(date) => {
           if (date) {
-            handleInputChange("end_date", date.toISOString().split('T')[0]);
+            handleInputChange("end_date", date.toLocaleDateString('en-CA'));
           }
         }}
         disabled={(date) => {
@@ -1549,80 +1610,157 @@ const renderSchedulingStep = () => {
           </div>
         )}
 
-        <div className="space-y-4">
-          {formData.start_date && (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-4">
-              <div className="text-sm text-gray-600">
-                <span className="font-medium">תקופת הקורס:</span>{" "}
-                {formatDate(new Date(formData.start_date), "dd/MM/yyyy")}
-                {formData.end_date && ` - ${formatDate(new Date(formData.end_date), "dd/MM/yyyy")}`}
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label>ימים בשבוע</Label>
-            <div className="flex flex-wrap gap-2">
-              {dayNames.map((day, index) => (
-                <div key={index} className="flex items-center space-x-2">
-                  <Checkbox id={`day-${index}`} checked={courseSchedule.days_of_week.includes(index)} onCheckedChange={() => toggleDayOfWeek(index)} />
-                  <Label htmlFor={`day-${index}`} className="text-sm">{day}</Label>
-                </div>
-              ))}
+        {formData.start_date && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-4">
+            <div className="text-sm text-gray-600">
+              <span className="font-medium">תקופת הקורס:</span>{" "}
+              {formatDate(new Date(formData.start_date), "dd/MM/yyyy")}
+              {formData.end_date && ` - ${formatDate(new Date(formData.end_date), "dd/MM/yyyy")}`}
             </div>
           </div>
+        )}
 
-          {courseSchedule.days_of_week.length > 0 && (
-            <div className="space-y-3">
-              <Label className="text-sm font-medium">זמנים לכל יום:</Label>
-              {courseSchedule.days_of_week.sort().map((dayIndex) => {
-                const timeSlot = courseSchedule.time_slots.find(ts => ts.day === dayIndex);
-                return (
-                  <div key={dayIndex} className="border rounded p-3 bg-gray-50">
-                    <div className="flex items-center gap-4">
-                      <span className="min-w-[60px] text-sm font-medium">{dayNames[dayIndex]}:</span>
-                      <div className="flex gap-2 flex-1">
-                        <div className="flex-1">
-                          <Label className="text-xs">התחלה</Label>
-                          <Input type="time" value={timeSlot?.start_time || ""} onChange={(e) => updateTimeSlot(dayIndex, "start_time", e.target.value)} className="text-sm" />
-                        </div>
-                        <div className="flex-1">
-                          <Label className="text-xs">סיום</Label>
-                          <Input type="time" value={timeSlot?.end_time || ""} onChange={(e) => updateTimeSlot(dayIndex, "end_time", e.target.value)} className="text-sm" />
+        {mode === 'edit' ? (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>ימים בשבוע</Label>
+              <div className="flex flex-wrap gap-2">
+                {dayNames.map((day, index) => (
+                  <div key={index} className="flex items-center space-x-2">
+                    <Checkbox id={`day-${index}`} checked={courseSchedule.days_of_week.includes(index)} onCheckedChange={() => toggleDayOfWeek(index)} />
+                    <Label htmlFor={`day-${index}`} className="text-sm">{day}</Label>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {courseSchedule.days_of_week.length > 0 && (
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">זמנים לכל יום:</Label>
+                {courseSchedule.days_of_week.sort().map((dayIndex) => {
+                  const timeSlot = courseSchedule.time_slots.find(ts => ts.day === dayIndex);
+                  return (
+                    <div key={dayIndex} className="border rounded p-3 bg-gray-50">
+                      <div className="flex items-center gap-4">
+                        <span className="min-w-[60px] text-sm font-medium">{dayNames[dayIndex]}:</span>
+                        <div className="flex gap-2 flex-1">
+                          <div className="flex-1">
+                            <Label className="text-xs">התחלה</Label>
+                            <Input type="time" value={timeSlot?.start_time || ""} onChange={(e) => updateTimeSlot(dayIndex, "start_time", e.target.value)} className="text-sm" />
+                          </div>
+                          <div className="flex-1">
+                            <Label className="text-xs">סיום</Label>
+                            <Input type="time" value={timeSlot?.end_time || ""} onChange={(e) => updateTimeSlot(dayIndex, "end_time", e.target.value)} className="text-sm" />
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="total_lessons">מספר מפגשים כולל</Label>
-              <Input
-                id="total_lessons"
-                type="number"
-                value={lessonsToDisplay.length}
-                readOnly
-                className="bg-gray-100 cursor-not-allowed"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="lesson_duration">משך שיעור (דקות)</Label>
-              <Input id="lesson_duration" type="number" min="15" step="15" value={courseSchedule.lesson_duration_minutes || ""} onChange={(e) => setCourseSchedule(prev => ({ ...prev, lesson_duration_minutes: parseInt(e.target.value) }))} placeholder="45" />
-            </div>
-            <div className="flex items-center gap-2 pt-6">
-              <Checkbox
-                id="is_double_lesson"
-                checked={isDoubleLesson}
-                onCheckedChange={(val) => setIsDoubleLesson(!!val)}
-              />
-              <Label htmlFor="is_double_lesson" className="cursor-pointer">שיעור כפול (90 דקות)</Label>
+                  );
+                })}
+              </div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="total_lessons">מספר מפגשים כולל</Label>
+                <Input id="total_lessons" type="number" value={lessonsToDisplay.length} readOnly className="bg-gray-100 cursor-not-allowed" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lesson_duration">משך שיעור (דקות)</Label>
+                <Input id="lesson_duration" type="number" min="15" step="15" value={courseSchedule.lesson_duration_minutes || ""} onChange={(e) => setCourseSchedule(prev => ({ ...prev, lesson_duration_minutes: parseInt(e.target.value) }))} placeholder="45" />
+              </div>
+              <div className="flex items-center gap-2 pt-6">
+                <Checkbox id="is_double_lesson" checked={isDoubleLesson} onCheckedChange={(val) => setIsDoubleLesson(!!val)} />
+                <Label htmlFor="is_double_lesson" className="cursor-pointer">שיעור כפול (90 דקות)</Label>
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="space-y-4">
+            {classes.map((cls, classIdx) => (
+              <div key={classIdx} className="border border-gray-200 rounded-lg p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-sm">כיתה {classIdx + 1}</span>
+                  {classes.length > 1 && (
+                    <Button type="button" variant="ghost" size="sm" className="text-red-500 hover:text-red-700 h-6 px-2"
+                      onClick={() => setClasses(prev => prev.filter((_, i) => i !== classIdx))}>×</Button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label>שם כיתה</Label>
+                  <Input value={cls.grade_level} onChange={(e) => updateClass(classIdx, 'grade_level', e.target.value)} placeholder="כיתה ז'" />
+                </div>
+                <div className="space-y-2">
+                  <Label>ימים בשבוע</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {dayNames.map((day, dayIdx) => (
+                      <div key={dayIdx} className="flex items-center space-x-2">
+                        <Checkbox id={`cls-${classIdx}-day-${dayIdx}`} checked={cls.days_of_week.includes(dayIdx)} onCheckedChange={() => toggleClassDayOfWeek(classIdx, dayIdx)} />
+                        <Label htmlFor={`cls-${classIdx}-day-${dayIdx}`} className="text-sm">{day}</Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {cls.days_of_week.length > 0 && (
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium">זמנים לכל יום:</Label>
+                    {cls.days_of_week.slice().sort().map(dayIdx => {
+                      const timeSlot = cls.time_slots.find(ts => ts.day === dayIdx);
+                      return (
+                        <div key={dayIdx} className="border rounded p-3 bg-gray-50">
+                          <div className="flex items-center gap-4">
+                            <span className="min-w-[60px] text-sm font-medium">{dayNames[dayIdx]}:</span>
+                            <div className="flex gap-2 flex-1">
+                              <div className="flex-1">
+                                <Label className="text-xs">התחלה</Label>
+                                <Input type="time" value={timeSlot?.start_time || ""} onChange={(e) => updateClassTimeSlot(classIdx, dayIdx, "start_time", e.target.value)} className="text-sm" />
+                              </div>
+                              <div className="flex-1">
+                                <Label className="text-xs">סיום</Label>
+                                <Input type="time" value={timeSlot?.end_time || ""} onChange={(e) => updateClassTimeSlot(classIdx, dayIdx, "end_time", e.target.value)} className="text-sm" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>מספר מפגשים כולל</Label>
+                    <Input type="number" value={lessonsToDisplay.length} readOnly className="bg-gray-100 cursor-not-allowed" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>משך שיעור (דקות)</Label>
+                    <Input type="number" min="15" step="15" value={cls.lesson_duration_minutes || ""} placeholder="45"
+                      onChange={(e) => updateClass(classIdx, 'lesson_duration_minutes', parseInt(e.target.value))} />
+                  </div>
+                  <div className="flex items-center gap-2 pt-6">
+                    <Checkbox id={`cls-${classIdx}-double`} checked={cls.is_double_lesson}
+                      onCheckedChange={(val) => updateClass(classIdx, 'is_double_lesson', !!val)} />
+                    <Label htmlFor={`cls-${classIdx}-double`} className="cursor-pointer">שיעור כפול (90 דקות)</Label>
+                  </div>
+                </div>
+              </div>
+            ))}
+            <Button type="button" variant="outline" className="w-full"
+              onClick={() => setClasses(prev => {
+                const first = prev[0];
+                return [...prev, {
+                  grade_level: '',
+                  days_of_week: first.days_of_week,
+                  time_slots: first.days_of_week.map(day => ({
+                    day,
+                    start_time: "08:00",
+                    end_time: "08:45",
+                  })),
+                  lesson_duration_minutes: first.lesson_duration_minutes,
+                  is_double_lesson: false,
+                }];
+              })}>
+              + הוסף כיתה
+            </Button>
+          </div>
+        )}
 
         <DialogFooter className="flex justify-between">
           <Button type="button" variant="outline" onClick={() => setStep(1)}>חזור</Button>
@@ -1867,6 +2005,14 @@ const renderCustomLessonsDialog = () => (
         </DialogContent>
       </Dialog>
       {renderCustomLessonsDialog()}
+      <AddInstitutionModal
+        open={showAddInstitution}
+        onOpenChange={setShowAddInstitution}
+        onSaved={async (newInstitution) => {
+          await fetchInstitutions();
+          handleInputChange("institution_id", newInstitution.id);
+        }}
+      />
     </>
   );
 };

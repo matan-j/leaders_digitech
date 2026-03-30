@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CalendarIcon } from 'lucide-react';
+import { CalendarIcon, Check } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 
@@ -15,9 +15,19 @@ interface CourseDetailsFormProps {
     school_type?: string;
     presentation_link?: string;
     program_link?: string;
+    color?: string;
   };
   onInputChange: (field: string, value: string) => void;
 }
+
+const COURSE_COLORS = [
+  '#574a7a',
+  '#cd7dff',
+  '#007e50',
+  '#00d0ff',
+  '#575dd9',
+  '#6730ff',
+];
 
 const CourseDetailsForm = ({ formData, onInputChange }: CourseDetailsFormProps) => {
   console.log("formData in CourseDetailsForm: ", formData);
@@ -71,6 +81,22 @@ const CourseDetailsForm = ({ formData, onInputChange }: CourseDetailsFormProps) 
           placeholder="https://..."
           type="url"
         />
+      </div>
+      <div className="space-y-2">
+        <Label>צבע קורס</Label>
+        <div className="flex gap-2 flex-wrap">
+          {COURSE_COLORS.map(c => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => onInputChange('color', c)}
+              className="w-8 h-8 rounded-full border-2 flex items-center justify-center transition-transform hover:scale-110"
+              style={{ backgroundColor: c, borderColor: formData.color === c ? '#fff' : c, outline: formData.color === c ? `2px solid ${c}` : 'none' }}
+            >
+              {formData.color === c && <Check className="h-4 w-4 text-white" />}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

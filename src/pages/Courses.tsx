@@ -89,7 +89,11 @@ interface Course {
   school_type?: string;
   presentation_link?: string;
   program_link?: string;
+  color?: string;
 }
+
+const getGradient = (color: string) =>
+  `linear-gradient(135deg, ${color}, ${color}aa)`;
 
 const Courses = () => {
   const { user } = useAuth();
@@ -419,11 +423,8 @@ const Courses = () => {
                     }`}
                   >
                     <CardHeader
-                      className={`text-white rounded-t-lg ${
-                        course.is_assigned
-                          ? "bg-gradient-to-r from-blue-600 to-blue-700"
-                          : "bg-gradient-to-r from-amber-500 to-orange-600"
-                      }`}
+                      className="text-white rounded-t-lg"
+                      style={{ background: getGradient(course.color || '#574a7a') }}
                     >
                       <div className="flex justify-between items-start">
                         <div>
@@ -510,11 +511,7 @@ const Courses = () => {
                                 href={course.presentation_link}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className={`underline text-sm ${
-                                  course.is_assigned
-                                    ? "text-blue-100"
-                                    : "text-amber-100"
-                                }`}
+                                className="underline text-sm text-white/80"
                               >
                                 <b> צפה במצגת הקורס</b>
                               </a>
@@ -530,11 +527,7 @@ const Courses = () => {
                                 href={course.program_link}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className={`underline text-sm ${
-                                  course.is_assigned
-                                    ? "text-blue-100"
-                                    : "text-amber-100"
-                                }`}
+                                className="underline text-sm text-white/80"
                               >
                                 <b> צפה בתכנית הפדגוגית</b>
                               </a>

@@ -39,6 +39,7 @@ export async function fetchCoursesWithPagination(start: number, end: number) {
       presentation_link,
       program_link,
       created_at,
+      color,
       is_visible
     `, { count: 'exact' })
     .eq("is_visible", true)

@@ -1,4 +1,9 @@
 project_id = "nesjuxdsjbtulcryvnjw"
+
+[functions.notify-admins-unreported-lessons]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/notify-admins-unreported-lessons/index.ts"
 [functions.notify-admins-on-feedback]
 enabled = true
 verify_jwt = true

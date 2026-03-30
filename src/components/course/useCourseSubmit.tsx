@@ -20,6 +20,7 @@ export function useCourseSubmit(onCourseCreated: () => void, onClose: (open: boo
             school_type: formData.school_type,
             presentation_link: formData.presentation_link || null,
             program_link: formData.program_link || null,
+            color: formData.color || '#574a7a',
           })
           .eq('id', editCourseId);
 
@@ -36,6 +37,7 @@ export function useCourseSubmit(onCourseCreated: () => void, onClose: (open: boo
             school_type: formData.school_type,
             presentation_link: formData.presentation_link || null,
             program_link: formData.program_link || null,
+            color: formData.color || '#574a7a',
           })
           .select('id')
           .single();

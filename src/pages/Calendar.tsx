@@ -2,6 +2,7 @@
 import  { useEffect, useState, useCallback, useRef } from "react";
 import { Calendar as CalendarIcon, BarChart3 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import MobileNavigation from "@/components/layout/MobileNavigation";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -12,6 +13,9 @@ const Calendar = () => {
   const { user } = useAuth();
   const location = useLocation();
   const nav = useNavigate();
+
+  const role = user?.user_metadata?.role;
+  const isAdminOrManager = ['admin', 'pedagogical_manager'].includes(role);
 
   // Initialize selectedDate from location state or default to today
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
@@ -24,6 +28,10 @@ const Calendar = () => {
   const [lessons, setLessons] = useState<any[]>([]);
   const [loadingState, setLoadingState] = useState<'initial' | 'loading-more' | 'complete'>('initial');
   const loadedRangeRef = useRef<{ start: Date; end: Date } | null>(null);
+
+  const [selectedInstructor, setSelectedInstructor] = useState('all');
+  const [selectedCourse, setSelectedCourse] = useState('all');
+  const [selectedInstitution, setSelectedInstitution] = useState('all');
 
   /**
    * Progressive loading strategy:
@@ -83,6 +91,48 @@ const Calendar = () => {
     }
   }, []);
 
+  // Derive unique options from fetched lessons
+  const instructorOptions = isAdminOrManager
+    ? Array.from(
+        new Map(
+          lessons
+            .map(l => l.course_instances?.instructor)
+            .filter(Boolean)
+            .map(i => [i.id, i])
+        ).values()
+      ).sort((a, b) => a.full_name.localeCompare(b.full_name, 'he'))
+    : [];
+
+  const courseOptions = isAdminOrManager
+    ? Array.from(
+        new Map(
+          lessons
+            .map(l => l.course_instances?.course)
+            .filter(Boolean)
+            .map(c => [c.id, c])
+        ).values()
+      ).sort((a, b) => a.name.localeCompare(b.name, 'he'))
+    : [];
+
+  const institutionOptions = isAdminOrManager
+    ? Array.from(
+        new Map(
+          lessons
+            .map(l => l.course_instances?.institution)
+            .filter(Boolean)
+            .map(i => [i.id, i])
+        ).values()
+      ).sort((a, b) => a.name.localeCompare(b.name, 'he'))
+    : [];
+
+  const filteredLessons = lessons.filter(lesson => {
+    const ci = lesson.course_instances;
+    if (selectedInstructor !== 'all' && ci?.instructor?.id !== selectedInstructor) return false;
+    if (selectedCourse !== 'all' && ci?.course?.id !== selectedCourse) return false;
+    if (selectedInstitution !== 'all' && ci?.institution?.id !== selectedInstitution) return false;
+    return true;
+  });
+
   // Auto-refresh calendar data every 2 minutes
   useEffect(() => {
     if (!user) return;
@@ -128,6 +178,52 @@ const Calendar = () => {
         </div>
       </div>
 
+      {isAdminOrManager && (
+        <div dir="rtl" className="flex flex-wrap gap-3 px-3 sm:px-0 mb-4">
+          <Select value={selectedInstructor} onValueChange={setSelectedInstructor}>
+            <SelectTrigger className="w-44 bg-white">
+              <SelectValue>
+                {selectedInstructor === 'all' ? 'סנן לפי מדריך' : instructorOptions.find(i => i.id === selectedInstructor)?.full_name}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">הכל</SelectItem>
+              {instructorOptions.map(i => (
+                <SelectItem key={i.id} value={i.id}>{i.full_name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={selectedCourse} onValueChange={setSelectedCourse}>
+            <SelectTrigger className="w-44 bg-white">
+              <SelectValue>
+                {selectedCourse === 'all' ? 'סנן לפי תכנית' : courseOptions.find(c => c.id === selectedCourse)?.name}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">הכל</SelectItem>
+              {courseOptions.map(c => (
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={selectedInstitution} onValueChange={setSelectedInstitution}>
+            <SelectTrigger className="w-44 bg-white">
+              <SelectValue>
+                {selectedInstitution === 'all' ? 'סנן לפי בית ספר' : institutionOptions.find(i => i.id === selectedInstitution)?.name}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">הכל</SelectItem>
+              {institutionOptions.map(i => (
+                <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       <div className="w-full max-w-7xl mx-auto">
         <div className="w-full">
           <Card className="w-full rounded-none border-0 shadow-none sm:rounded-xl sm:border sm:shadow">
@@ -141,7 +237,7 @@ const Calendar = () => {
                 <WeeklyCalendar
                   selectedDate={selectedDate}
                   setSelectedDate={setSelectedDate}
-                  lessons={lessons}
+                  lessons={filteredLessons}
                 />
               </div>
             </CardHeader>

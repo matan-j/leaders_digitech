@@ -1663,10 +1663,6 @@ const renderSchedulingStep = () => {
                 <Label htmlFor="total_lessons">מספר מפגשים כולל</Label>
                 <Input id="total_lessons" type="number" value={lessonsToDisplay.length} readOnly className="bg-gray-100 cursor-not-allowed" />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="lesson_duration">משך שיעור (דקות)</Label>
-                <Input id="lesson_duration" type="number" min="15" step="15" value={courseSchedule.lesson_duration_minutes || ""} onChange={(e) => setCourseSchedule(prev => ({ ...prev, lesson_duration_minutes: parseInt(e.target.value) }))} placeholder="45" />
-              </div>
               <div className="flex items-center gap-2 pt-6">
                 <Checkbox id="is_double_lesson" checked={isDoubleLesson} onCheckedChange={(val) => setIsDoubleLesson(!!val)} />
                 <Label htmlFor="is_double_lesson" className="cursor-pointer">שיעור כפול (90 דקות)</Label>
@@ -1728,11 +1724,6 @@ const renderSchedulingStep = () => {
                   <div className="space-y-2">
                     <Label>מספר מפגשים כולל</Label>
                     <Input type="number" value={lessonsToDisplay.length} readOnly className="bg-gray-100 cursor-not-allowed" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>משך שיעור (דקות)</Label>
-                    <Input type="number" min="15" step="15" value={cls.lesson_duration_minutes || ""} placeholder="45"
-                      onChange={(e) => updateClass(classIdx, 'lesson_duration_minutes', parseInt(e.target.value))} />
                   </div>
                   <div className="flex items-center gap-2 pt-6">
                     <Checkbox id={`cls-${classIdx}-double`} checked={cls.is_double_lesson}

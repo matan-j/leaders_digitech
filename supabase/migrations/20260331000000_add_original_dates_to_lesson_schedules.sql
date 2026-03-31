@@ -1,0 +1,3 @@
+ALTER TABLE lesson_schedules
+  ADD COLUMN IF NOT EXISTS original_scheduled_start TIMESTAMPTZ DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS original_scheduled_end TIMESTAMPTZ DEFAULT NULL;

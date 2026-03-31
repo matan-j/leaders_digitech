@@ -555,6 +555,37 @@ const handleCancelEdit = () => {
 };
 
 
+const handleUndoPostpone = async () => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) throw new Error('לא ניתן לקבל token')
+
+    let resolvedScheduleId = scheduleId
+    if (!resolvedScheduleId && courseInstanceIdFromUrl) {
+      const { data: schedules } = await supabase
+        .from('lesson_schedules')
+        .select('id')
+        .eq('course_instance_id', courseInstanceIdFromUrl)
+        .not('original_scheduled_start', 'is', null)
+        .limit(1)
+      resolvedScheduleId = schedules?.[0]?.id
+    }
+    if (!resolvedScheduleId) throw new Error('לא נמצא תזמון לשחזור')
+
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/undo-postpone-schedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+      body: JSON.stringify({ scheduleId: resolvedScheduleId, reportId: editReportId }),
+    })
+    const result = await response.json()
+    if (!result.success) throw new Error(result.message)
+    toast({ title: 'השיעור שוחזר', description: result.message })
+    navigate('/calendar')
+  } catch (err: any) {
+    toast({ title: 'שגיאה', description: err.message, variant: 'destructive' })
+  }
+}
+
 const handleSaveEdit = async (studentId: string) => {
   if (!editedName.trim()) {
     toast({
@@ -2174,6 +2205,19 @@ const clearAllFilters = () => {
                       <option value={1}>1</option>
                       {isDoubleLesson && <option value={2}>2</option>}
                     </select>
+                  </div>
+                )}
+
+                {isEditingReport && !isCompleted && (
+                  <div className="mt-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleUndoPostpone}
+                      className="border-amber-500 text-amber-700 hover:bg-amber-50"
+                    >
+                      בטל ביטול השיעור
+                    </Button>
                   </div>
                 )}
 

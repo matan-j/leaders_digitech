@@ -64,6 +64,7 @@ Deno.serve(async (req) => {
     console.log('[postponeSchedule] Original schedule:', originalSchedule);
 
     const originalStartDate = new Date(originalSchedule.scheduled_start);
+    const originalEndDate = new Date(originalSchedule.scheduled_end);
     console.log('[postponeSchedule] Original start date:', originalStartDate.toISOString());
 
     const courseInstance = originalSchedule.course_instances;
@@ -206,7 +207,9 @@ Deno.serve(async (req) => {
       .from('lesson_schedules')
       .update({
         scheduled_start: newStart.toISOString(),
-        scheduled_end: newEnd.toISOString()
+        scheduled_end: newEnd.toISOString(),
+        original_scheduled_start: originalStartDate.toISOString(),
+        original_scheduled_end: originalEndDate.toISOString(),
       })
       .eq('id', payload.scheduleId)
       .select()
@@ -257,7 +260,9 @@ Deno.serve(async (req) => {
               .from('lesson_schedules')
               .update({
                 scheduled_start: shiftedStart.toISOString(),
-                scheduled_end: shiftedEnd.toISOString()
+                scheduled_end: shiftedEnd.toISOString(),
+                original_scheduled_start: scheduleDate.toISOString(),
+                original_scheduled_end: schedule.scheduled_end,
               })
               .eq('id', schedule.id);
 

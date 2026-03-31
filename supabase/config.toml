@@ -4,6 +4,11 @@ project_id = "nesjuxdsjbtulcryvnjw"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/notify-admins-unreported-lessons/index.ts"
+
+[functions.undo-postpone-schedule]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/undo-postpone-schedule/index.ts"
 [functions.notify-admins-on-feedback]
 enabled = true
 verify_jwt = true

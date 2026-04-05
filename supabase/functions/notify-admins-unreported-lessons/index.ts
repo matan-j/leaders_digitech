@@ -19,9 +19,10 @@ Deno.serve(async (req) => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-    // Find lesson_schedules where scheduled_end < now() - 24h
+    // Find lesson_schedules where scheduled_end is between now()-48h and now()-24h
     // embedding lesson_reports to detect unreported ones
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const upperBound = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
 
     const { data: schedules, error: scheduleError } = await supabase
       .from('lesson_schedules')
@@ -37,6 +38,7 @@ Deno.serve(async (req) => {
         )
       `)
       .lt('scheduled_end', cutoff)
+      .gt('scheduled_end', upperBound)
       .is('admin_notified_at', null)
 
     if (scheduleError) {

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find c:UsersUserDocumentsapisoul-eduapp_dev-2696b04c1ff7 -name *postpone* -o -name *cancel*)",
+      "Bash(grep -r is_cancelled c:UsersUserDocumentsapisoul-eduapp_dev-2696b04c1ff7 --include=*.ts --include=*.tsx --include=*.js --include=*.jsx)",
+      "Bash(find c:UsersUserDocumentsapisoul-eduapp_dev-2696b04c1ff7 -name *.sql -o -name *migration*)",
+      "Bash(grep -r \"lesson_schedules\\\\|is_cancelled\" c:UsersUserDocumentsapisoul-eduapp_dev-2696b04c1ff7supabasemigrations --include=*.sql)",
+      "Bash(grep -r lesson_schedules c:UsersUserDocumentsapisoul-eduapp_dev-2696b04c1ff7src --include=*.ts --include=*.tsx)",
+      "Bash(grep -v \"^[0-9]*:.*//.*\")"
+    ]
+  }
+}

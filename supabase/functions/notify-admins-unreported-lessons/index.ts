@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
     // Find lesson_schedules where scheduled_end is between now()-48h and now()-24h
     // embedding lesson_reports to detect unreported ones
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-    const upperBound = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
+    const upperBound = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
 
     const { data: schedules, error: scheduleError } = await supabase
       .from('lesson_schedules')

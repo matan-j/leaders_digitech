@@ -7,6 +7,7 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY')!
+console.log('[debug] BREVO_API_KEY loaded:', BREVO_API_KEY ? `YES (length: ${BREVO_API_KEY.length}, first 8 chars: ${BREVO_API_KEY.substring(0, 8)})` : 'MISSING')
 
 Deno.serve(async (req) => {
   console.log(`=== UNREPORTED LESSONS NOTIFICATION START ===`)

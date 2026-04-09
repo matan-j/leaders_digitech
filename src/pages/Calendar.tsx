@@ -8,6 +8,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { WeeklyCalendar } from "@/components/ui/WeeklyCalendar";
 import { fetchSchedulesByDateRange } from "@/utils/scheduleUtils";
+import { filterLessons } from "@/utils/calendarFilters";
 
 const Calendar = () => {
   const { user } = useAuth();
@@ -125,13 +126,7 @@ const Calendar = () => {
       ).sort((a, b) => a.name.localeCompare(b.name, 'he'))
     : [];
 
-  const filteredLessons = lessons.filter(lesson => {
-    const ci = lesson.course_instances;
-    if (selectedInstructor !== 'all' && ci?.instructor?.id !== selectedInstructor) return false;
-    if (selectedCourse !== 'all' && ci?.course?.id !== selectedCourse) return false;
-    if (selectedInstitution !== 'all' && ci?.institution?.id !== selectedInstitution) return false;
-    return true;
-  });
+  const filteredLessons = filterLessons(lessons, selectedInstructor, selectedCourse, selectedInstitution);
 
   // Auto-refresh calendar data every 2 minutes
   useEffect(() => {

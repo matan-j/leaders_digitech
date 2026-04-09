@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { getGradient } from "@/utils/gradientUtils";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import {
@@ -92,8 +93,6 @@ interface Course {
   color?: string;
 }
 
-const getGradient = (color: string) =>
-  `linear-gradient(135deg, ${color}, ${color}aa)`;
 
 const Courses = () => {
   const { user } = useAuth();

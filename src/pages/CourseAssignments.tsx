@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
+import { getGradient } from "@/utils/gradientUtils";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import {
@@ -99,8 +100,6 @@ interface CourseAssignment {
   institution?: { id: string; name: string };
 }
 
-const getGradient = (color: string) =>
-  `linear-gradient(135deg, ${color}, ${color}aa)`;
 
 // Simple Cache for report statuses
 const statusCache = new Map<string, { data: Map<string, any>; timestamp: number }>();

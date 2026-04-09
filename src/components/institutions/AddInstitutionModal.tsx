@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { validateInstitution, filterValidContacts } from '@/utils/institutionValidation';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -88,15 +89,12 @@ const AddInstitutionModal: React.FC<AddInstitutionModalProps> = ({
   };
 
   const handleSave = async () => {
-    if (!form.name?.trim() || !form.city?.trim()) {
-      toast({ title: "שגיאה", description: "נדרש למלא שם מוסד ועיר", variant: "destructive" });
+    const validation = validateInstitution(form.name ?? '', form.city ?? '', form.contacts ?? []);
+    if (!validation.valid) {
+      toast({ title: "שגיאה", description: validation.error, variant: "destructive" });
       return;
     }
-    const validContacts = (form.contacts || []).filter(c => c.name.trim());
-    if (validContacts.length === 0) {
-      toast({ title: "שגיאה", description: "נדרש לפחות איש קשר אחד עם שם", variant: "destructive" });
-      return;
-    }
+    const validContacts = filterValidContacts(form.contacts ?? []);
     setLoading(true);
     try {
       const dataToSave = {

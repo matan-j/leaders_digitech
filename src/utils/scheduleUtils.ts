@@ -59,15 +59,7 @@ let blockedDatesCache: BlockedDate[] | null = null;
 let cacheTimestamp: number = 0;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
  
-export const formatDateLocal = (date: Date): string => {
-  return (
-    date.getFullYear() +
-    "-" +
-    String(date.getMonth() + 1).padStart(2, "0") +
-    "-" +
-    String(date.getDate()).padStart(2, "0")
-  );
-};
+export { formatDateLocal } from './dateUtils';
 
 export const getSystemDefaults = async (forceRefresh: boolean = false): Promise<SystemDefaults> => {
   const now = Date.now();

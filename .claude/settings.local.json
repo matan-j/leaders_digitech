@@ -6,7 +6,9 @@
       "Bash(find c:UsersUserDocumentsapisoul-eduapp_dev-2696b04c1ff7 -name *.sql -o -name *migration*)",
       "Bash(grep -r \"lesson_schedules\\\\|is_cancelled\" c:UsersUserDocumentsapisoul-eduapp_dev-2696b04c1ff7supabasemigrations --include=*.sql)",
       "Bash(grep -r lesson_schedules c:UsersUserDocumentsapisoul-eduapp_dev-2696b04c1ff7src --include=*.ts --include=*.tsx)",
-      "Bash(grep -v \"^[0-9]*:.*//.*\")"
+      "Bash(grep -v \"^[0-9]*:.*//.*\")",
+      "Bash(npm test:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

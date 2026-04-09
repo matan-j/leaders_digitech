@@ -1,4 +1,5 @@
 import React from 'react';
+import { COURSE_COLORS } from '@/utils/gradientUtils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -20,14 +21,6 @@ interface CourseDetailsFormProps {
   onInputChange: (field: string, value: string) => void;
 }
 
-const COURSE_COLORS = [
-  '#574a7a',
-  '#cd7dff',
-  '#007e50',
-  '#00d0ff',
-  '#575dd9',
-  '#6730ff',
-];
 
 const CourseDetailsForm = ({ formData, onInputChange }: CourseDetailsFormProps) => {
   console.log("formData in CourseDetailsForm: ", formData);

@@ -29,6 +29,7 @@ const Calendar = () => {
   const [lessons, setLessons] = useState<any[]>([]);
   const [loadingState, setLoadingState] = useState<'initial' | 'loading-more' | 'complete'>('initial');
   const loadedRangeRef = useRef<{ start: Date; end: Date } | null>(null);
+  const prevMonthRef = useRef<number | null>(null);
 
   const [selectedInstructor, setSelectedInstructor] = useState('all');
   const [selectedCourse, setSelectedCourse] = useState('all');
@@ -40,13 +41,13 @@ const Calendar = () => {
    * 2. Then load ±2 months (background)
    * 3. Continue expanding until we have enough data
    */
-  const fetchLessonsData = useCallback(async (expandMonths = 1) => {
+  const fetchLessonsData = useCallback(async (expandMonths = 1, centerDate?: Date) => {
     if (!user) return;
 
     try {
       console.log(`[Calendar] Progressive loading: ±${expandMonths} months`);
 
-      const now = new Date();
+      const now = centerDate || selectedDate || new Date();
       const startDate = new Date(now.getFullYear(), now.getMonth() - expandMonths, 1);
       startDate.setHours(0, 0, 0, 0);
 
@@ -70,10 +71,10 @@ const Calendar = () => {
         setLoadingState('loading-more');
         // Wait a bit to let the UI update, then load more
         setTimeout(() => {
-          fetchLessonsData(2).then(() => {
+          fetchLessonsData(2, centerDate).then(() => {
             // After loading ±2 months, load ±3 months
             setTimeout(() => {
-              fetchLessonsData(3).then(() => {
+              fetchLessonsData(3, centerDate).then(() => {
                 setLoadingState('complete');
               });
             }, 1000);
@@ -83,7 +84,7 @@ const Calendar = () => {
     } catch (error) {
       console.error("[Calendar] Error fetching lessons:", error);
     }
-  }, [user]);
+  }, [user, selectedDate]);
 
   useEffect(() => {
     if (user) {
@@ -140,6 +141,19 @@ const Calendar = () => {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+    const currentMonth = selectedDate.getFullYear() * 12 + selectedDate.getMonth();
+    if (prevMonthRef.current !== null && prevMonthRef.current !== currentMonth) {
+      if (!loadedRangeRef.current ||
+          selectedDate < loadedRangeRef.current.start ||
+          selectedDate > loadedRangeRef.current.end) {
+        setLoadingState('initial');
+        fetchLessonsData(1, selectedDate);
+      }
+    }
+    prevMonthRef.current = currentMonth;
+  }, [selectedDate, user, fetchLessonsData]);
 
 
 

@@ -1,14 +1,15 @@
 // MobileNavigation.tsx (updated for matching desktop styling and routing)
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { BookOpen, Calendar, FileText, Users, BarChart3, User, Award } from 'lucide-react';
+import { BookOpen, Calendar, FileText, Users, BarChart3, User, Award, Briefcase } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthProvider';
 
 const MobileNavigation = () => {
   const { user } = useAuth();
 const isAdminOrManager = ['admin', 'pedagogical_manager'].includes(user?.user_metadata?.role);
 const isAdmin = ['admin'].includes(user?.user_metadata?.role);
-  
+const isCrmUser = ['admin', 'sales_rep'].includes(user?.user_metadata?.role);
+
   const navItems = [
     { path: '/', label: 'דשבורד', icon: BookOpen },
     { path: '/calendar', label: 'יומן', icon: Calendar },
@@ -16,6 +17,7 @@ const isAdmin = ['admin'].includes(user?.user_metadata?.role);
     { path: '/courses', label: 'קורסים', icon: Users } ,
    { path: '/course-assignments', label: 'הקצאות', icon: Users } ,
     ...(isAdmin ? [{ path: '/reports', label: 'דוחות', icon: BarChart3 }] : []),
+    ...(isCrmUser ? [{ path: '/crm', label: 'CRM', icon: Briefcase }] : []),
     { path: '/rewards', label: 'תגמולים', icon: Award },
     { path: '/profile', label: 'פרופיל', icon: User },
   ];

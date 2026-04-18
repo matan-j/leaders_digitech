@@ -8,7 +8,19 @@
       "Bash(grep -r lesson_schedules c:UsersUserDocumentsapisoul-eduapp_dev-2696b04c1ff7src --include=*.ts --include=*.tsx)",
       "Bash(grep -v \"^[0-9]*:.*//.*\")",
       "Bash(npm test:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(grep -l \"CREATE TABLE\" /c/Users/alonp/OneDrive/Documents/leaders_digitech/supabase/migrations/*.sql)",
+      "Bash(find \"/c/Users/alonp/OneDrive/Documents/leaders_digitech/supabase/migrations\" -name \"*.sql\" -exec grep -l \"educational_institutions\" {} \\\\;)",
+      "Bash(grep -r \"get_current_user_role\\\\|RLS\\\\|POLICY\" /c/Users/alonp/OneDrive/Documents/leaders_digitech/supabase/migrations/*.sql)",
+      "Bash(xargs grep *)",
+      "Bash(grep -n \"CREATE TABLE\\\\|CREATE FUNCTION\\\\|user_role\" \"/c/Users/alonp/OneDrive/Documents/leaders_digitech/supabase/migrations/\"*.sql)",
+      "Bash(find \"/c/Users/alonp/OneDrive/Documents/leaders_digitech\" -type f \\\\\\( -name \"*.sql\" -o -name \"*seed*\" -o -name \"*init*\" \\\\\\) ! -path \"*/node_modules/*\" -exec grep -l \"educational_institutions\" {} \\\\;)",
+      "Bash(grep -l \"educational_institutions\\\\|CREATE TABLE\" /c/Users/alonp/OneDrive/Documents/leaders_digitech/supabase/migrations/*.sql)",
+      "Bash(grep -l \"educational_institutions\" /c/Users/alonp/OneDrive/Documents/leaders_digitech/supabase/migrations/*.sql)",
+      "Bash(grep -r \"CREATE TABLE\" /c/Users/alonp/OneDrive/Documents/leaders_digitech/supabase/migrations/*.sql -A 10)",
+      "Bash(grep -r \"TABLE.*contacts\\\\|contacts.*CREATE\\\\|ALTER TABLE.*profiles\\\\|ADD COLUMN.*profiles\" /c/Users/alonp/OneDrive/Documents/leaders_digitech/supabase/migrations/*.sql)",
+      "Bash(wc -l /c/Users/alonp/OneDrive/Documents/leaders_digitech/supabase/migrations/*.sql)",
+      "Bash(find /c/Users/alonp/OneDrive/Documents/leaders_digitech/supabase -type f -name \"*.sql\" -exec grep -l \"CREATE TABLE\" {} \\\\;)"
     ]
   }
 }

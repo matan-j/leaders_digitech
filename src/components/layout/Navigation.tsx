@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
-import { BookOpen, Calendar, FileText, Users, BarChart3, LogOut, Menu, X, User,Settings2Icon } from 'lucide-react';
+import { BookOpen, Calendar, FileText, Users, BarChart3, LogOut, Menu, X, User, Settings2Icon, Briefcase } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import Profile from '@/pages/Profile';
 import { toast } from 'sonner';
@@ -16,7 +16,8 @@ const Navigation = () => {
  const [profile, setProfile] = useState<Profile | null>(null);
   //ask matan if i should enable instructors view courses page.
   const isAdminOrManager = ['admin', 'pedagogical_manager'].includes(user?.user_metadata?.role);
-   const isAdmin = ['admin'].includes(user?.user_metadata?.role);
+  const isAdmin = ['admin'].includes(user?.user_metadata?.role);
+  const isCrmUser = ['admin', 'sales_rep'].includes(user?.user_metadata?.role);
 const navigationItems = [
   { path: '/', label: 'דשבורד', icon: BookOpen },
   { path: '/calendar', label: 'יומן', icon: Calendar },
@@ -24,6 +25,7 @@ const navigationItems = [
   { path: '/courses', label: 'קורסים', icon: Users },
   { path: '/course-assignments', label: 'הקצאות קורסים', icon: Users },
   isAdmin && { path: '/reports', label: 'דוחות ושכר', icon: BarChart3 },
+  isCrmUser && { path: '/crm', label: 'CRM', icon: Briefcase },
   { path: '/rewards', label: 'תגמולים', icon: BarChart3 },
   { path: '/profile', label: 'פרופיל', icon: User },
    isAdminOrManager && { path: '/AdminSettings', label: 'הגדרות מנהל ', icon: Settings2Icon },
@@ -61,6 +63,7 @@ const navigationItems = [
     useEffect(() => {
       fetchProfile();
     }, []);
+  console.log('[Nav] role:', user?.user_metadata?.role, 'isCrmUser:', isCrmUser);
   return (
     <>
       {/* Desktop Navigation */}

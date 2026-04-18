@@ -20,6 +20,7 @@ import NotFound from "./pages/NotFound";
 import { VerifyPage } from "./pages/VerifyPage";
 import AdminSettings from "./pages/AdminSettings";
 import ResetPassword from "./components/ResetPassword";
+import CRM from "./pages/CRM";
 
 const queryClient = new QueryClient();
 
@@ -148,6 +149,17 @@ const App = () => (
                     </div>
                   </ProtectedRoute>
                 } 
+              />
+              <Route
+                path="/crm"
+                element={
+                  <ProtectedRoute allowedRoles={['admin', 'sales_rep']}>
+                    <div className="min-h-screen">
+                      <Navigation />
+                      <CRM />
+                    </div>
+                  </ProtectedRoute>
+                }
               />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />

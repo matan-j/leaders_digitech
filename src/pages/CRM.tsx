@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import CRMDashboard from '@/components/crm/CRMDashboard';
 import CRMInstitutionsList from '@/components/crm/CRMInstitutionsList';
+import CRMPipeline from '@/components/crm/CRMPipeline';
 
 export type CRMTab = 'dashboard' | 'list' | 'pipeline' | 'messages' | 'broadcast' | 'followup';
 
@@ -61,11 +62,7 @@ const CRM = () => {
       <div>
         {activeTab === 'dashboard' && <CRMDashboard setTab={setActiveTab} />}
         {activeTab === 'list' && <CRMInstitutionsList setTab={setActiveTab} />}
-        {activeTab === 'pipeline' && (
-          <div style={{ padding: '40px 24px', color: C.textSub, fontSize: 14 }}>
-            פייפליין — בקרוב
-          </div>
-        )}
+        {activeTab === 'pipeline' && <CRMPipeline />}
         {activeTab === 'messages' && (
           <div style={{ padding: '40px 24px', color: C.textSub, fontSize: 14 }}>
             עורך הודעות — בקרוב

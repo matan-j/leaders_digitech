@@ -21,6 +21,7 @@ import { VerifyPage } from "./pages/VerifyPage";
 import AdminSettings from "./pages/AdminSettings";
 import ResetPassword from "./components/ResetPassword";
 import CRM from "./pages/CRM";
+import CRMInstitution from "./pages/CRMInstitution";
 
 const queryClient = new QueryClient();
 
@@ -157,6 +158,17 @@ const App = () => (
                     <div className="min-h-screen">
                       <Navigation />
                       <CRM />
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/crm/institution/:id"
+                element={
+                  <ProtectedRoute allowedRoles={['admin', 'sales_rep']}>
+                    <div className="min-h-screen">
+                      <Navigation />
+                      <CRMInstitution />
                     </div>
                   </ProtectedRoute>
                 }

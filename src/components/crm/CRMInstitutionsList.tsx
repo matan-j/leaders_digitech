@@ -406,7 +406,7 @@ const CRMInstitutionsList = ({ setTab: _setTab }: Props) => {
                     style={{ borderBottom: `1px solid ${C.borderLight}`, cursor: 'pointer' }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = C.bg)}
                     onMouseLeave={(e) => (e.currentTarget.style.background = '')}
-                  >
+                                     >
                     {/* Institution name */}
                     <td style={{ padding: '9px 12px' }} onClick={() => navigate(`/crm/institution/${row.id}`)}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: C.accent }}>{row.name}</div>

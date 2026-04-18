@@ -20,7 +20,8 @@
       "Bash(grep -r \"CREATE TABLE\" /c/Users/alonp/OneDrive/Documents/leaders_digitech/supabase/migrations/*.sql -A 10)",
       "Bash(grep -r \"TABLE.*contacts\\\\|contacts.*CREATE\\\\|ALTER TABLE.*profiles\\\\|ADD COLUMN.*profiles\" /c/Users/alonp/OneDrive/Documents/leaders_digitech/supabase/migrations/*.sql)",
       "Bash(wc -l /c/Users/alonp/OneDrive/Documents/leaders_digitech/supabase/migrations/*.sql)",
-      "Bash(find /c/Users/alonp/OneDrive/Documents/leaders_digitech/supabase -type f -name \"*.sql\" -exec grep -l \"CREATE TABLE\" {} \\\\;)"
+      "Bash(find /c/Users/alonp/OneDrive/Documents/leaders_digitech/supabase -type f -name \"*.sql\" -exec grep -l \"CREATE TABLE\" {} \\\\;)",
+      "Bash(npx tsc *)"
     ]
   }
 }

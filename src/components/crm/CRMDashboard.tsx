@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { callCrmAI } from '@/hooks/useCrmAI';
 import type { CRMTab } from '@/pages/CRM';
 
 const C = {
@@ -229,32 +230,40 @@ const CRMDashboard = ({ setTab }: Props) => {
     setAiLoading(true);
     setAiSections(null);
     try {
-      const hotNames = hotLeads.map((h) => h.name).join(', ') || 'אין לידים';
-      const prompt = `CRM AI for Digi-tech (Israeli edtech). Concise daily briefing in Hebrew.
-Use EXACTLY these bold headers:
-**מי צפוי להיסגר:**
-**מי תקוע:**
-**לחידוש דחוף:**
-**המלצה לעכשיו:**
-Base on: ${hotNames}. Max 1-2 short lines each. Actionable.`;
-
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': '', 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 600,
-          messages: [{ role: 'user', content: prompt }],
-        }),
+      const raw = await callCrmAI('daily_summary', {
+        stats: {
+          newLeads: kpis.newLeads,
+          inProgress: kpis.inProgress,
+          activeCustomers: kpis.activeCustomers,
+          openOpportunities: kpis.openOpportunities,
+          overdueFollowups: kpis.overdueFollowups,
+        },
+        hotLeads: hotLeads.map((h) => ({
+          name: h.name,
+          stage: h.crm_stage,
+          potential: h.crm_potential,
+          lastContact: h.crm_last_contact_at,
+        })),
       });
-      const json = await res.json();
-      const text: string = json.content?.[0]?.text ?? '';
-      const parts = text.split(/\*\*(.+?):\*\*/).filter(Boolean);
-      const sections: AISection[] = [];
-      for (let i = 0; i < parts.length - 1; i += 2) {
-        sections.push({ title: parts[i], body: (parts[i + 1] ?? '').trim() });
+
+      // Edge function returns JSON: { closing_soon, stuck, renewal, recommendation }
+      let parsed: Record<string, string>;
+      try {
+        parsed = JSON.parse(raw) as Record<string, string>;
+      } catch {
+        // Fallback: treat raw text as single section
+        setAiSections([{ title: 'סיכום', body: raw }]);
+        setAiLoading(false);
+        return;
       }
-      setAiSections(sections.length ? sections : [{ title: 'סיכום', body: text }]);
+
+      const mapping: [string, string][] = [
+        ['מי צפוי להיסגר', parsed['closing_soon'] ?? '—'],
+        ['מי תקוע',        parsed['stuck']         ?? '—'],
+        ['לחידוש דחוף',   parsed['renewal']        ?? '—'],
+        ['המלצה לעכשיו',  parsed['recommendation'] ?? '—'],
+      ];
+      setAiSections(mapping.map(([title, body]) => ({ title, body })));
     } catch (_) {
       setAiSections([{ title: 'שגיאה', body: 'לא ניתן לטעון. בדוק חיבור.' }]);
     }

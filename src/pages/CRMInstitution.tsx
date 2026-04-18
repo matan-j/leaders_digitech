@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { callCrmAI } from '@/hooks/useCrmAI';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import Navigation from '@/components/layout/Navigation';
 
 // ── design tokens ─────────────────────────────────────────────
 const C = {
@@ -534,22 +534,36 @@ const TabAI = ({ institution, opportunities, activities }: { institution: Instit
     setLoading(true);
     setResult(null);
     try {
-      const ctx = `מוסד: ${institution.name}, עיר: ${institution.city ?? '—'}, שלב: ${institution.crm_stage ?? '—'}, פוטנציאל: ₪${institution.crm_potential ?? '—'}, הזדמנויות פתוחות: ${opportunities.filter(o => o.status === 'open').length}, פעילויות: ${activities.length}, קשר אחרון: ${formatLastContact(institution.crm_last_contact_at)}`;
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': '', 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514', max_tokens: 500,
-          messages: [{ role: 'user', content: `CRM AI analysis for Israeli edtech. Data: ${ctx}\nRespond in Hebrew with EXACTLY these bold headers:\n**ציון CRM:**\n**סיכוי סגירה:**\n**צעד הבא:**\n**סיכונים:**\n**הזדמנויות:**\nOne short line each.` }],
-        }),
+      const raw = await callCrmAI('institution_analysis', {
+        name: institution.name,
+        city: institution.city ?? null,
+        stage: institution.crm_stage ?? null,
+        potential: institution.crm_potential ?? null,
+        openOpportunities: opportunities.filter(o => o.status === 'open').length,
+        totalActivities: activities.length,
+        lastContact: institution.crm_last_contact_at ?? null,
+        lastActivities: activities.slice(0, 5).map(a => ({ type: a.type, summary: a.summary, occurred_at: a.occurred_at })),
       });
-      const json = await res.json();
-      const text: string = json.content?.[0]?.text ?? '';
-      const extract = (key: string) => {
-        const m = text.match(new RegExp(`\\*\\*${key}:\\*\\*\\s*([^\\n*]+)`));
-        return m?.[1]?.trim() ?? '—';
-      };
-      setResult({ score: extract('ציון CRM'), closingChance: extract('סיכוי סגירה'), nextStep: extract('צעד הבא'), risks: extract('סיכונים'), opportunities: extract('הזדמנויות') });
+
+      // Edge function returns JSON: { score, close_probability, next_step, risks, opportunities }
+      let parsed: { score?: string | number; close_probability?: string; next_step?: string; risks?: string[]; opportunities?: string[] };
+      try {
+        parsed = JSON.parse(raw) as typeof parsed;
+      } catch {
+        setResult({ score: '—', closingChance: '—', nextStep: raw, risks: '—', opportunities: '—' });
+        setLoading(false);
+        return;
+      }
+
+      const riskText = Array.isArray(parsed.risks) ? parsed.risks.join(' | ') : String(parsed.risks ?? '—');
+      const oppText = Array.isArray(parsed.opportunities) ? parsed.opportunities.join(' | ') : String(parsed.opportunities ?? '—');
+      setResult({
+        score: String(parsed.score ?? '—'),
+        closingChance: parsed.close_probability ?? '—',
+        nextStep: parsed.next_step ?? '—',
+        risks: riskText,
+        opportunities: oppText,
+      });
     } catch {
       setResult({ score: '—', closingChance: '—', nextStep: '—', risks: 'שגיאה בחיבור', opportunities: '—' });
     }
@@ -632,17 +646,11 @@ const CRMInstitution = () => {
   }, [id]);
 
   if (loading) return (
-    <div className="min-h-screen" style={{ background: C.bg }}>
-      <Navigation />
-      <div style={{ padding: '40px', textAlign: 'center', color: C.textSub, fontSize: 13 }}>טוען...</div>
-    </div>
+    <div style={{ padding: '40px', textAlign: 'center', color: C.textSub, fontSize: 13 }}>טוען...</div>
   );
 
   if (!institution) return (
-    <div className="min-h-screen" style={{ background: C.bg }}>
-      <Navigation />
-      <div style={{ padding: '40px', textAlign: 'center', color: C.danger, fontSize: 13 }}>מוסד לא נמצא</div>
-    </div>
+    <div style={{ padding: '40px', textAlign: 'center', color: C.danger, fontSize: 13 }}>מוסד לא נמצא</div>
   );
 
   const openOpps = opportunities.filter(o => o.status === 'open').length;
@@ -651,8 +659,7 @@ const CRMInstitution = () => {
   const initials = institution.name.split(' ').map(w => w[0]).join('').slice(0, 2);
 
   return (
-    <div className="min-h-screen" style={{ background: C.bg }} dir="rtl">
-      <Navigation />
+    <div style={{ background: C.bg }} dir="rtl">
 
       {/* Modals */}
       {showAddContact && id && <AddContactModal institutionId={id} onClose={() => setShowAddContact(false)} onSaved={c => { setContacts(p => [c, ...p]); setShowAddContact(false); }} />}

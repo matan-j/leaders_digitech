@@ -2,6 +2,9 @@ import { useState } from 'react';
 import CRMDashboard from '@/components/crm/CRMDashboard';
 import CRMInstitutionsList from '@/components/crm/CRMInstitutionsList';
 import CRMPipeline from '@/components/crm/CRMPipeline';
+import CRMMessagesEditor from '@/components/crm/CRMMessagesEditor';
+import CRMBroadcast from '@/components/crm/CRMBroadcast';
+import CRMFollowupQueue from '@/components/crm/CRMFollowupQueue';
 
 export type CRMTab = 'dashboard' | 'list' | 'pipeline' | 'messages' | 'broadcast' | 'followup';
 
@@ -63,21 +66,9 @@ const CRM = () => {
         {activeTab === 'dashboard' && <CRMDashboard setTab={setActiveTab} />}
         {activeTab === 'list' && <CRMInstitutionsList setTab={setActiveTab} />}
         {activeTab === 'pipeline' && <CRMPipeline />}
-        {activeTab === 'messages' && (
-          <div style={{ padding: '40px 24px', color: C.textSub, fontSize: 14 }}>
-            עורך הודעות — בקרוב
-          </div>
-        )}
-        {activeTab === 'broadcast' && (
-          <div style={{ padding: '40px 24px', color: C.textSub, fontSize: 14 }}>
-            שליחה בקבוצות — בקרוב
-          </div>
-        )}
-        {activeTab === 'followup' && (
-          <div style={{ padding: '40px 24px', color: C.textSub, fontSize: 14 }}>
-            תור מעקב — בקרוב
-          </div>
-        )}
+        {activeTab === 'messages' && <CRMMessagesEditor />}
+        {activeTab === 'broadcast' && <CRMBroadcast />}
+        {activeTab === 'followup' && <CRMFollowupQueue />}
       </div>
     </div>
   );

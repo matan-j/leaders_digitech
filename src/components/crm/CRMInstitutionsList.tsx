@@ -406,29 +406,30 @@ const CRMInstitutionsList = ({ setTab: _setTab }: Props) => {
                     style={{ borderBottom: `1px solid ${C.borderLight}`, cursor: 'pointer' }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = C.bg)}
                     onMouseLeave={(e) => (e.currentTarget.style.background = '')}
-                                     >
+                    onClick={() => navigate(`/crm/institution/${row.id}`)}
+                  >
                     {/* Institution name */}
-                    <td style={{ padding: '9px 12px' }} onClick={() => navigate(`/crm/institution/${row.id}`)}>
+                    <td style={{ padding: '9px 12px' }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: C.accent }}>{row.name}</div>
                     </td>
 
                     {/* City */}
-                    <td style={{ padding: '9px 12px', fontSize: 12, color: C.textSub }} onClick={() => navigate(`/crm/institution/${row.id}`)}>
+                    <td style={{ padding: '9px 12px', fontSize: 12, color: C.textSub }}>
                       {row.city ?? '—'}
                     </td>
 
                     {/* Classification */}
-                    <td style={{ padding: '9px 12px' }} onClick={() => navigate(`/crm/institution/${row.id}`)}>
+                    <td style={{ padding: '9px 12px' }}>
                       {row.crm_class ? classBadge(row.crm_class) : <span style={{ color: C.textDim, fontSize: 12 }}>—</span>}
                     </td>
 
                     {/* Stage */}
-                    <td style={{ padding: '9px 12px' }} onClick={() => navigate(`/crm/institution/${row.id}`)}>
+                    <td style={{ padding: '9px 12px' }}>
                       {row.crm_stage ? stageBadge(row.crm_stage) : <span style={{ color: C.textDim, fontSize: 12 }}>—</span>}
                     </td>
 
                     {/* Primary contact */}
-                    <td style={{ padding: '9px 12px' }} onClick={() => navigate(`/crm/institution/${row.id}`)}>
+                    <td style={{ padding: '9px 12px' }}>
                       {contact ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <Av name={contact.name} size={22} />
@@ -457,12 +458,12 @@ const CRMInstitutionsList = ({ setTab: _setTab }: Props) => {
                     </td>
 
                     {/* Last contact */}
-                    <td style={{ padding: '9px 12px', fontSize: 12, color: C.textSub }} onClick={() => navigate(`/crm/institution/${row.id}`)}>
+                    <td style={{ padding: '9px 12px', fontSize: 12, color: C.textSub }}>
                       {formatLastContact(row.crm_last_contact_at)}
                     </td>
 
                     {/* Next step */}
-                    <td style={{ padding: '9px 12px' }} onClick={() => navigate(`/crm/institution/${row.id}`)}>
+                    <td style={{ padding: '9px 12px' }}>
                       {row.crm_next_step ? (
                         <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: C.accentBg, color: C.accent }}>
                           {row.crm_next_step}
@@ -473,7 +474,7 @@ const CRMInstitutionsList = ({ setTab: _setTab }: Props) => {
                     </td>
 
                     {/* Open opportunity / potential */}
-                    <td style={{ padding: '9px 12px', fontSize: 13, fontWeight: 700, color: C.success }} onClick={() => navigate(`/crm/institution/${row.id}`)}>
+                    <td style={{ padding: '9px 12px', fontSize: 13, fontWeight: 700, color: C.success }}>
                       {row.crm_potential != null ? `₪${Number(row.crm_potential).toLocaleString('he-IL')}` : '—'}
                     </td>
                   </tr>

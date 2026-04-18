@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Papa from 'papaparse';
 import { supabase } from '@/integrations/supabase/client';
 import AssignInstructorModal from './AssignInstructorModal';
 import type { CRMTab } from '@/pages/CRM';
@@ -94,117 +95,320 @@ interface InstitutionRow {
 
 // ── CSV modal ────────────────────────────────────────────────
 
-interface CsvModalProps {
-  onClose: () => void;
+const TEMPLATE_FIELDS = ['שם מוסד', 'עיר', 'סוג', 'איש קשר', 'תפקיד', 'טלפון', 'אימייל'] as const;
+const REQUIRED_FIELDS: (typeof TEMPLATE_FIELDS[number])[] = ['שם מוסד', 'עיר'];
+
+interface CsvRow {
+  'שם מוסד': string;
+  'עיר': string;
+  'סוג': string;
+  'איש קשר': string;
+  'תפקיד': string;
+  'טלפון': string;
+  'אימייל': string;
+  _invalid?: boolean;
 }
 
-const CsvModal = ({ onClose }: CsvModalProps) => {
-  const [step, setStep] = useState(0);
-  const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
-  const [done, setDone] = useState(false);
+interface ImportResult {
+  imported: number;
+  autoAssigned: number;
+  errors: number;
+}
+
+interface CsvModalProps {
+  onClose: () => void;
+  onImportDone: () => void;
+}
+
+const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
+  const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
+  const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState<ImportResult | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const parseFile = (file: File) => {
+    Papa.parse<Record<string, string>>(file, {
+      header: true,
+      skipEmptyLines: true,
+      delimitersToGuess: [',', ';', '\t'],
+      encoding: 'UTF-8',
+      complete: (result) => {
+        const rows: CsvRow[] = result.data.map((r) => {
+          // Normalize BOM-stripped header keys
+          const norm: Record<string, string> = {};
+          for (const [k, v] of Object.entries(r)) {
+            norm[k.replace(/^\uFEFF/, '').trim()] = (v ?? '').trim();
+          }
+          const row: CsvRow = {
+            'שם מוסד': norm['שם מוסד'] ?? '',
+            'עיר':     norm['עיר'] ?? '',
+            'סוג':     norm['סוג'] ?? '',
+            'איש קשר': norm['איש קשר'] ?? '',
+            'תפקיד':   norm['תפקיד'] ?? '',
+            'טלפון':   norm['טלפון'] ?? '',
+            'אימייל':  norm['אימייל'] ?? '',
+          };
+          row._invalid = REQUIRED_FIELDS.some((f) => !row[f]);
+          return row;
+        });
+        setCsvRows(rows);
+        setStep(1);
+      },
+    });
+  };
+
+  const handleFile = (file: File) => {
+    if (!file.name.match(/\.(csv|txt|xlsx?)$/i)) return;
+    parseFile(file);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const lines = (ev.target?.result as string).split(/\r?\n/).filter(Boolean);
-      if (lines.length < 2) return;
-      const header = lines[0].split(',').map((s) => s.trim());
-      const parsed = lines.slice(1).map((line) => {
-        const vals = line.split(',').map((s) => s.trim());
-        const obj: Record<string, string> = {};
-        header.forEach((h, i) => { obj[h] = vals[i] ?? ''; });
-        return obj;
-      }).filter((r) => Object.values(r).some((v) => v));
-      setCsvRows(parsed);
-      setStep(1);
-    };
-    reader.readAsText(file, 'utf-8');
+    if (file) handleFile(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleFile(file);
   };
 
   const downloadTemplate = () => {
-    const content = 'שם מוסד,עיר,סוג,איש קשר,טלפון,אימייל\nדוגמה,תל אביב,עירייה,שם,054-0000000,ex@org.il';
+    const header = TEMPLATE_FIELDS.join(',');
+    const example = 'בית ספר לדוגמה,תל אביב,תיכון,ישראל ישראלי,מנהל,050-1234567,example@school.co.il';
     const a = document.createElement('a');
-    a.href = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(content);
-    a.download = 'template.csv';
+    a.href = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(`${header}\n${example}`);
+    a.download = 'institutions_template.csv';
     a.click();
   };
 
+  const runImport = async () => {
+    const validRows = csvRows.filter((r) => !r._invalid);
+    if (validRows.length === 0) return;
+
+    setImporting(true);
+    setStep(2);
+
+    // Fetch instructors for city-matching
+    const { data: instructors } = await supabase
+      .from('profiles')
+      .select('id, city')
+      .eq('role', 'instructor');
+
+    let imported = 0;
+    let autoAssigned = 0;
+    let errors = 0;
+
+    for (const row of validRows) {
+      try {
+        const { data: inst, error: instErr } = await supabase
+          .from('educational_institutions')
+          .insert({ name: row['שם מוסד'], city: row['עיר'] || null })
+          .select('id')
+          .single();
+
+        if (instErr || !inst) { errors++; continue; }
+
+        // Auto-assign instructor by city
+        if (instructors && row['עיר']) {
+          const match = instructors.find(
+            (i: { id: string; city: string | null }) => i.city?.trim() === row['עיר'].trim()
+          );
+          if (match) {
+            await supabase
+              .from('educational_institutions')
+              .update({ crm_assigned_instructor_id: match.id })
+              .eq('id', inst.id);
+            autoAssigned++;
+          }
+        }
+
+        // Insert contact if name provided
+        if (row['איש קשר']) {
+          await supabase.from('crm_contacts').insert({
+            institution_id: inst.id,
+            name: row['איש קשר'],
+            role: row['תפקיד'] || null,
+            phone: row['טלפון'] || null,
+            email: row['אימייל'] || null,
+            is_primary: true,
+          });
+        }
+
+        imported++;
+      } catch {
+        errors++;
+      }
+    }
+
+    setResult({ imported, autoAssigned, errors });
+    setImporting(false);
+    setStep(3);
+  };
+
+  const validCount = csvRows.filter((r) => !r._invalid).length;
+  const invalidCount = csvRows.length - validCount;
+
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(15,17,23,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: C.surface, borderRadius: 12, width: 560, maxWidth: '94vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.22)' }} dir="rtl">
+      <div style={{ background: C.surface, borderRadius: 12, width: 620, maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.22)' }} dir="rtl">
+
+        {/* Header */}
         <div style={{ padding: '16px 22px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>📤 ייבוא מוסדות מ-CSV</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 18, color: C.textSub, cursor: 'pointer' }}>✕</button>
         </div>
+
+        {/* Step indicator */}
+        <div style={{ display: 'flex', padding: '10px 22px', gap: 6, borderBottom: `1px solid ${C.border}` }}>
+          {(['העלאה', 'תצוגה מקדימה', 'ייבוא', 'סיום'] as const).map((label, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: step >= i ? 1 : 0.35 }}>
+              <div style={{ width: 20, height: 20, borderRadius: '50%', background: step > i ? C.success : step === i ? C.accent : C.border, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>
+                {step > i ? '✓' : i + 1}
+              </div>
+              <span style={{ fontSize: 11, fontWeight: step === i ? 700 : 400, color: step === i ? C.text : C.textSub }}>{label}</span>
+              {i < 3 && <span style={{ color: C.border, fontSize: 12 }}>›</span>}
+            </div>
+          ))}
+        </div>
+
         <div style={{ overflowY: 'auto', padding: '18px 22px', flex: 1 }}>
+
+          {/* Step 0 — Upload */}
           {step === 0 && (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: C.aiBg, border: `1px solid ${C.ai}20`, borderRadius: 8, marginBottom: 14, fontSize: 13 }}>
-                <span style={{ color: C.ai, flex: 1 }}>ייבוא מהיר ממסמך אקסל / CSV — כולל שיוך מדריך אוטומטי לפי עיר.</span>
+                <span style={{ color: C.ai, flex: 1 }}>ייבוא מהיר ממסמך CSV — כולל שיוך מדריך אוטומטי לפי עיר.</span>
               </div>
               <div
                 onClick={() => fileRef.current?.click()}
-                style={{ border: `2px dashed ${C.border}`, borderRadius: 10, padding: '32px 20px', textAlign: 'center', cursor: 'pointer', background: C.bg, marginBottom: 14 }}
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                style={{ border: `2px dashed ${dragOver ? C.accent : C.border}`, borderRadius: 10, padding: '36px 20px', textAlign: 'center', cursor: 'pointer', background: dragOver ? C.accentBg : C.bg, marginBottom: 14, transition: 'all 0.15s' }}
               >
-                <div style={{ fontSize: 28, marginBottom: 8 }}>📁</div>
-                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 3 }}>גרור קובץ CSV לכאן</div>
-                <div style={{ fontSize: 12, color: C.textSub }}>או לחץ לבחירת קובץ</div>
-                <input ref={fileRef} type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={handleFile} />
+                <div style={{ fontSize: 32, marginBottom: 8 }}>📁</div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>גרור קובץ CSV לכאן</div>
+                <div style={{ fontSize: 12, color: C.textSub }}>או לחץ לבחירת קובץ (.csv, .xlsx)</div>
+                <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx" style={{ display: 'none' }} onChange={handleInputChange} />
               </div>
               <div style={{ background: C.bg, borderRadius: 8, padding: '10px 13px', fontFamily: 'monospace', fontSize: 12, color: C.textSub, lineHeight: 1.8, marginBottom: 12 }}>
-                שם מוסד, עיר, סוג, איש קשר, טלפון, אימייל<br />
-                עיריית נתניה, נתניה, עירייה, דנה לוי, 054-111, dana@net.il
+                {TEMPLATE_FIELDS.join(', ')}<br />
+                בית ספר לדוגמה, תל אביב, תיכון, ישראל ישראלי, מנהל, 050-1234567, example@school.co.il
               </div>
               <button onClick={downloadTemplate} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 6, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, fontSize: 12, padding: '5px 11px', background: C.surface, color: C.text }}>
                 ⬇ הורד תבנית
               </button>
             </>
           )}
-          {step === 1 && !done && csvRows.length > 0 && (
+
+          {/* Step 1 — Preview */}
+          {step === 1 && (
             <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: C.successBg, border: `1px solid ${C.success}20`, borderRadius: 8, marginBottom: 14, fontSize: 13 }}>
-                <span style={{ color: C.success, flex: 1 }}>✓ נמצאו <b>{csvRows.length} מוסדות</b></span>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                <div style={{ flex: 1, padding: '9px 14px', background: C.successBg, border: `1px solid ${C.success}20`, borderRadius: 8, fontSize: 13, color: C.success, fontWeight: 600 }}>
+                  ✓ {validCount} שורות תקינות
+                </div>
+                {invalidCount > 0 && (
+                  <div style={{ padding: '9px 14px', background: C.dangerBg, border: `1px solid ${C.danger}20`, borderRadius: 8, fontSize: 13, color: C.danger, fontWeight: 600 }}>
+                    ⚠ {invalidCount} שורות חסרות שדות חובה
+                  </div>
+                )}
               </div>
-              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden', maxHeight: 240, overflowY: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ background: C.bg }}>
-                      {Object.keys(csvRows[0] ?? {}).map((h) => (
-                        <th key={h} style={{ padding: '6px 10px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: C.textSub, borderBottom: `1px solid ${C.border}` }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {csvRows.map((row, i) => (
-                      <tr key={i} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
-                        {Object.values(row).map((v, j) => (
-                          <td key={j} style={{ padding: '6px 10px', fontSize: 12 }}>{v}</td>
+              <div style={{ fontSize: 11, color: C.textSub, marginBottom: 8 }}>
+                מציג {Math.min(csvRows.length, 5)} מתוך {csvRows.length} שורות · שדות חובה: שם מוסד, עיר
+              </div>
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                <div style={{ overflowX: 'auto', maxHeight: 260 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: C.bg }}>
+                        {TEMPLATE_FIELDS.map((h) => (
+                          <th key={h} style={{ padding: '7px 10px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: C.textSub, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>
+                            {h}{REQUIRED_FIELDS.includes(h as typeof REQUIRED_FIELDS[number]) ? ' *' : ''}
+                          </th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {csvRows.slice(0, 5).map((row, i) => (
+                        <tr key={i} style={{ borderBottom: `1px solid ${C.borderLight}`, background: row._invalid ? C.dangerBg : undefined }}>
+                          {TEMPLATE_FIELDS.map((f) => (
+                            <td key={f} style={{ padding: '6px 10px', fontSize: 12, color: (REQUIRED_FIELDS.includes(f as typeof REQUIRED_FIELDS[number]) && !row[f]) ? C.danger : C.text }}>
+                              {row[f] || <span style={{ color: C.textDim }}>—</span>}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
+              {csvRows.length > 5 && (
+                <div style={{ fontSize: 11, color: C.textSub, marginTop: 8, textAlign: 'center' }}>
+                  + {csvRows.length - 5} שורות נוספות
+                </div>
+              )}
             </>
           )}
-          {done && (
-            <div style={{ textAlign: 'center', padding: '24px 0' }}>
-              <div style={{ fontSize: 40, marginBottom: 10 }}>✅</div>
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 5 }}>הייבוא הושלם!</div>
-              <div style={{ fontSize: 13, color: C.textSub, marginBottom: 18 }}>{csvRows.length} מוסדות נוספו · שיוך מדריכים אוטומטי בוצע לפי עיר</div>
-              <button onClick={onClose} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 6, fontWeight: 600, cursor: 'pointer', border: 'none', fontSize: 13, padding: '7px 14px', background: C.accent, color: '#fff' }}>סגור</button>
+
+          {/* Step 2 — Importing spinner */}
+          {step === 2 && importing && (
+            <div style={{ textAlign: 'center', padding: '40px 0' }}>
+              <div style={{ fontSize: 32, marginBottom: 12, animation: 'spin 1s linear infinite' }}>⏳</div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>מייבא מוסדות...</div>
+              <div style={{ fontSize: 12, color: C.textSub }}>אנא המתן, מבצע שיוך מדריכים אוטומטי לפי עיר</div>
+            </div>
+          )}
+
+          {/* Step 3 — Done */}
+          {step === 3 && result && (
+            <div style={{ textAlign: 'center', padding: '28px 0' }}>
+              <div style={{ fontSize: 44, marginBottom: 12 }}>✅</div>
+              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>הייבוא הושלם!</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 280, margin: '0 auto 20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 14px', background: C.successBg, borderRadius: 8, fontSize: 13 }}>
+                  <span style={{ color: C.success, fontWeight: 600 }}>מוסדות נוספו</span>
+                  <span style={{ color: C.success, fontWeight: 700 }}>{result.imported}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 14px', background: C.accentBg, borderRadius: 8, fontSize: 13 }}>
+                  <span style={{ color: C.accent, fontWeight: 600 }}>שויכו למדריכים אוטומטית</span>
+                  <span style={{ color: C.accent, fontWeight: 700 }}>{result.autoAssigned}</span>
+                </div>
+                {result.errors > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 14px', background: C.dangerBg, borderRadius: 8, fontSize: 13 }}>
+                    <span style={{ color: C.danger, fontWeight: 600 }}>שגיאות</span>
+                    <span style={{ color: C.danger, fontWeight: 700 }}>{result.errors}</span>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => { onImportDone(); onClose(); }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 6, fontWeight: 600, cursor: 'pointer', border: 'none', fontSize: 13, padding: '9px 22px', background: C.accent, color: '#fff' }}
+              >
+                סגור ורענן רשימה
+              </button>
             </div>
           )}
         </div>
-        {step === 1 && !done && (
+
+        {/* Footer buttons */}
+        {step === 1 && (
           <div style={{ padding: '13px 22px', borderTop: `1px solid ${C.border}`, display: 'flex', gap: 8 }}>
-            <button onClick={() => setDone(true)} style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 6, fontWeight: 600, cursor: 'pointer', border: 'none', fontSize: 13, padding: '7px 14px', background: C.accent, color: '#fff' }}>
-              ✓ ייבא {csvRows.length} מוסדות
+            <button
+              onClick={runImport}
+              disabled={validCount === 0}
+              style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 6, fontWeight: 600, cursor: validCount > 0 ? 'pointer' : 'not-allowed', border: 'none', fontSize: 13, padding: '8px 14px', background: validCount > 0 ? C.accent : C.border, color: '#fff', opacity: validCount > 0 ? 1 : 0.6 }}
+            >
+              ✓ ייבא {validCount} מוסדות
             </button>
-            <button onClick={() => setStep(0)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 6, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, fontSize: 13, padding: '7px 14px', background: C.surface, color: C.text }}>
+            <button
+              onClick={() => { setStep(0); setCsvRows([]); }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 6, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, fontSize: 13, padding: '8px 14px', background: C.surface, color: C.text }}
+            >
               חזור
             </button>
           </div>
@@ -234,34 +438,33 @@ const CRMInstitutionsList = ({ setTab: _setTab }: Props) => {
   const [filterInstructor, setFilterInstructor] = useState('הכל');
 
   // ── load data ────────────────────────────────────────────────
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('educational_institutions')
-        .select(`
-          id, name, city,
-          crm_class, crm_stage, crm_last_contact_at, crm_next_step, crm_next_step_date,
-          crm_owner_id, crm_assigned_instructor_id,
-          crm_potential,
-          instructor:crm_assigned_instructor_id (id, full_name),
-          contacts:crm_contacts (id, name, role, is_primary)
-        `)
-        .order('name');
+  const fetchInstitutions = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('educational_institutions')
+      .select(`
+        id, name, city,
+        crm_class, crm_stage, crm_last_contact_at, crm_next_step, crm_next_step_date,
+        crm_owner_id, crm_assigned_instructor_id,
+        crm_potential,
+        instructor:crm_assigned_instructor_id (id, full_name),
+        contacts:crm_contacts (id, name, role, is_primary)
+      `)
+      .order('name');
 
-      if (!error && data) {
-        setRows(
-          data.map((d: any) => ({
-            ...d,
-            instructor: Array.isArray(d.instructor) ? d.instructor[0] ?? null : d.instructor,
-            contacts: Array.isArray(d.contacts) ? d.contacts : [],
-          })),
-        );
-      }
-      setLoading(false);
-    };
-    load();
+    if (!error && data) {
+      setRows(
+        data.map((d: any) => ({
+          ...d,
+          instructor: Array.isArray(d.instructor) ? d.instructor[0] ?? null : d.instructor,
+          contacts: Array.isArray(d.contacts) ? d.contacts : [],
+        })),
+      );
+    }
+    setLoading(false);
   }, []);
+
+  useEffect(() => { fetchInstitutions(); }, [fetchInstitutions]);
 
   // ── derived filter options ───────────────────────────────────
   const cities = [...new Set(rows.map((r) => r.city).filter(Boolean))] as string[];
@@ -325,7 +528,7 @@ const CRMInstitutionsList = ({ setTab: _setTab }: Props) => {
 
   return (
     <div dir="rtl" style={{ padding: '20px 24px', overflowY: 'auto' }}>
-      {showCsv && <CsvModal onClose={() => setShowCsv(false)} />}
+      {showCsv && <CsvModal onClose={() => setShowCsv(false)} onImportDone={fetchInstitutions} />}
       {assignTarget && (
         <AssignInstructorModal
           institutionId={assignTarget.id}

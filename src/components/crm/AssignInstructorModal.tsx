@@ -29,7 +29,6 @@ const Av = ({ name, size = 28 }: { name: string; size?: number }) => (
 interface Instructor {
   id: string;
   full_name: string;
-  city?: string | null;
 }
 
 interface Props {
@@ -53,23 +52,19 @@ const AssignInstructorModal = ({
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, city')
+        .select('id, full_name')
         .eq('role', 'instructor')
         .order('full_name');
+      if (error) { console.error('[AssignInstructorModal] fetch error:', error); return; }
       if (data) setInstructors(data as Instructor[]);
     };
     load();
   }, []);
 
-  const cityNorm = (institutionCity ?? '').trim();
-  const suggested = instructors.filter(
-    (i) => i.city && i.city.trim() === cityNorm && cityNorm !== '',
-  );
-  const others = instructors.filter(
-    (i) => !(i.city && i.city.trim() === cityNorm && cityNorm !== ''),
-  );
+  const suggested: Instructor[] = [];
+  const others = instructors;
 
   const handleAssign = async () => {
     if (!selected) return;
@@ -136,7 +131,6 @@ const AssignInstructorModal = ({
                   <Av name={instr.full_name} size={32} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{instr.full_name}</div>
-                    {instr.city && <div style={{ fontSize: 11, color: C.textSub }}>{instr.city}</div>}
                   </div>
                   <span style={{
                     fontSize: 10, color: C.success, fontWeight: 700,
@@ -172,7 +166,6 @@ const AssignInstructorModal = ({
                   <Av name={instr.full_name} size={28} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 12, fontWeight: 600 }}>{instr.full_name}</div>
-                    {instr.city && <div style={{ fontSize: 11, color: C.textSub }}>{instr.city}</div>}
                   </div>
                   {selected === instr.id && <span style={{ color: C.accent, fontSize: 16 }}>✓</span>}
                 </div>
@@ -181,7 +174,7 @@ const AssignInstructorModal = ({
           )}
 
           {instructors.length === 0 && (
-            <div style={{ fontSize: 13, color: C.textSub }}>טוען מדריכים...</div>
+            <div style={{ fontSize: 13, color: C.textSub }}>אין מדריכים רשומים במערכת</div>
           )}
         </div>
 

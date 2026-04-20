@@ -179,10 +179,14 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
   const downloadTemplate = () => {
     const header = TEMPLATE_FIELDS.join(',');
     const example = 'בית ספר לדוגמה,תל אביב,תיכון,ישראל ישראלי,מנהל,050-1234567,example@school.co.il';
+    const bom = '\uFEFF';
+    const blob = new Blob([bom + header + '\n' + example], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(`${header}\n${example}`);
+    a.href = url;
     a.download = 'institutions_template.csv';
     a.click();
+    URL.revokeObjectURL(url);
   };
 
   const runImport = async () => {

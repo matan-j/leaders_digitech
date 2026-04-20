@@ -426,9 +426,10 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
 
 interface Props {
   setTab: (tab: CRMTab) => void;
+  mode: 'leads' | 'customers';
 }
 
-const CRMInstitutionsList = ({ setTab: _setTab }: Props) => {
+const CRMInstitutionsList = ({ setTab: _setTab, mode }: Props) => {
   const navigate = useNavigate();
   const [rows, setRows] = useState<InstitutionRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -444,7 +445,7 @@ const CRMInstitutionsList = ({ setTab: _setTab }: Props) => {
   // ── load data ────────────────────────────────────────────────
   const fetchInstitutions = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    let query = supabase
       .from('educational_institutions')
       .select(`
         id, name, city,
@@ -456,6 +457,14 @@ const CRMInstitutionsList = ({ setTab: _setTab }: Props) => {
       `)
       .order('name');
 
+    if (mode === 'leads') {
+      query = query.or('crm_class.eq.Lead,crm_class.is.null');
+    } else {
+      query = query.eq('crm_class', 'Customer');
+    }
+
+    const { data, error } = await query;
+
     if (!error && data) {
       setRows(
         data.map((d: any) => ({
@@ -466,7 +475,7 @@ const CRMInstitutionsList = ({ setTab: _setTab }: Props) => {
       );
     }
     setLoading(false);
-  }, []);
+  }, [mode]);
 
   useEffect(() => { fetchInstitutions(); }, [fetchInstitutions]);
 
@@ -543,15 +552,6 @@ const CRMInstitutionsList = ({ setTab: _setTab }: Props) => {
         />
       )}
 
-      {/* Unassigned banner */}
-      {unassignedCount > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: C.warningBg, border: `1px solid ${C.warning}20`, borderRadius: 8, marginBottom: 14, fontSize: 13 }}>
-          <span style={{ color: C.warning, flex: 1 }}>
-            ⚠️ <b>{unassignedCount} לידים</b> ללא מדריך משויך —{' '}
-            <span onClick={() => setFilterInstructor('לא משויך')} style={{ textDecoration: 'underline', cursor: 'pointer' }}>הצג אותם</span>
-          </span>
-        </div>
-      )}
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -595,7 +595,7 @@ const CRMInstitutionsList = ({ setTab: _setTab }: Props) => {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: C.bg }}>
-                {['מוסד', 'עיר', 'סיווג', 'שלב', 'איש קשר', 'מדריך משויך', 'קשר אחרון', 'פעולה הבאה', 'הזדמנות'].map((h) => (
+                {['מוסד', 'עיר', 'סיווג', 'שלב', 'איש קשר', mode === 'leads' ? 'מדריך מוכר' : 'מדריך לתכנית', 'קשר אחרון', 'פעולה הבאה', 'הזדמנות'].map((h) => (
                   <th key={h} style={{ padding: '9px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: C.textSub, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -692,7 +692,7 @@ const CRMInstitutionsList = ({ setTab: _setTab }: Props) => {
         )}
         <div style={{ padding: '9px 16px', background: C.bg, borderTop: `1px solid ${C.border}`, fontSize: 12, color: C.textSub, display: 'flex', justifyContent: 'space-between' }}>
           <span>מציג {filtered.length} מתוך {rows.length} מוסדות</span>
-          {unassignedCount > 0 && <span style={{ color: C.warning, fontWeight: 600 }}>{unassignedCount} ללא מדריך</span>}
+          {mode === 'leads' && unassignedCount > 0 && <span style={{ color: C.warning, fontWeight: 600 }}>{unassignedCount} ללא מדריך</span>}
         </div>
       </div>
     </div>

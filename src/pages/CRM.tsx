@@ -4,9 +4,8 @@ import CRMInstitutionsList from '@/components/crm/CRMInstitutionsList';
 import CRMPipeline from '@/components/crm/CRMPipeline';
 import CRMMessagesEditor from '@/components/crm/CRMMessagesEditor';
 import CRMBroadcast from '@/components/crm/CRMBroadcast';
-import CRMFollowupQueue from '@/components/crm/CRMFollowupQueue';
 
-export type CRMTab = 'dashboard' | 'list' | 'pipeline' | 'messages' | 'broadcast' | 'followup';
+export type CRMTab = 'dashboard' | 'leads' | 'customers' | 'pipeline' | 'messages' | 'broadcast';
 
 const C = {
   surface: '#FFFFFF',
@@ -17,11 +16,11 @@ const C = {
 
 const NAV_TABS: { id: CRMTab; label: string }[] = [
   { id: 'dashboard', label: 'דשבורד' },
-  { id: 'list', label: 'מוסדות' },
-  { id: 'pipeline', label: 'פייפליין' },
-  { id: 'messages', label: 'עורך הודעות' },
+  { id: 'leads',     label: 'לידים' },
+  { id: 'customers', label: 'לקוחות' },
+  { id: 'pipeline',  label: 'פייפליין' },
+  { id: 'messages',  label: 'עורך הודעות' },
   { id: 'broadcast', label: 'שליחה בקבוצות' },
-  { id: 'followup', label: 'תור מעקב' },
 ];
 
 const CRM = () => {
@@ -64,11 +63,11 @@ const CRM = () => {
       {/* Tab content */}
       <div>
         {activeTab === 'dashboard' && <CRMDashboard setTab={setActiveTab} />}
-        {activeTab === 'list' && <CRMInstitutionsList setTab={setActiveTab} />}
-        {activeTab === 'pipeline' && <CRMPipeline />}
-        {activeTab === 'messages' && <CRMMessagesEditor />}
+        {activeTab === 'leads'     && <CRMInstitutionsList setTab={setActiveTab} mode="leads" />}
+        {activeTab === 'customers' && <CRMInstitutionsList setTab={setActiveTab} mode="customers" />}
+        {activeTab === 'pipeline'  && <CRMPipeline />}
+        {activeTab === 'messages'  && <CRMMessagesEditor />}
         {activeTab === 'broadcast' && <CRMBroadcast />}
-        {activeTab === 'followup' && <CRMFollowupQueue />}
       </div>
     </div>
   );

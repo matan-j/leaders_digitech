@@ -338,9 +338,19 @@ const EditInstitutionModal = ({ institution, onClose, onSaved }: EditInstitution
 };
 
 // ── tab: סקירה ────────────────────────────────────────────────
-const TabOverview = ({ institution, activities, contacts }: { institution: Institution; activities: Activity[]; contacts: Contact[] }) => {
+const TabOverview = ({ institution, activities, contacts, onNotesSaved }: { institution: Institution; activities: Activity[]; contacts: Contact[]; onNotesSaved: (notes: string) => void }) => {
   const contactMap = Object.fromEntries(contacts.map(c => [c.id, c.name]));
   const typeIcon: Record<string, string> = { שיחה: '📞', מייל: '📧', פגישה: '🤝', וואטסאפ: '📱', אחר: '📝' };
+  const [notes, setNotes] = useState(institution.crm_notes ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const handleNotesBlur = async () => {
+    if (notes === (institution.crm_notes ?? '')) return;
+    setSaving(true);
+    await supabase.from('educational_institutions').update({ crm_notes: notes || null }).eq('id', institution.id);
+    setSaving(false);
+    onNotesSaved(notes);
+  };
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -358,12 +368,19 @@ const TabOverview = ({ institution, activities, contacts }: { institution: Insti
             <span style={{ fontSize: 12, color: C.text }}>{v}</span>
           </div>
         ))}
-        {institution.crm_notes && (
-          <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 8, background: C.bg, border: `1px solid ${C.border}`, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: C.textSub, marginBottom: 5 }}>הערות</div>
-            {institution.crm_notes}
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: C.textSub, marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6 }}>
+            הערות
+            {saving && <span style={{ fontSize: 9, color: C.textDim, fontWeight: 400 }}>שומר...</span>}
           </div>
-        )}
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            onBlur={handleNotesBlur}
+            placeholder="הוסף הערות על המוסד..."
+            style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, color: C.text, background: C.bg, resize: 'vertical', minHeight: 80, outline: 'none', lineHeight: 1.6, fontFamily: 'inherit' }}
+          />
+        </div>
       </div>
       <div>
         <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>פעילות אחרונה</div>
@@ -737,7 +754,7 @@ const CRMInstitution = () => {
 
           <div style={{ padding: '18px 0' }}>
             <TabsContent value="overview">
-              <TabOverview institution={institution} activities={activities} contacts={contacts} />
+              <TabOverview institution={institution} activities={activities} contacts={contacts} onNotesSaved={n => setInstitution(p => p ? { ...p, crm_notes: n || null } : p)} />
             </TabsContent>
             <TabsContent value="contacts">
               <TabContacts contacts={contacts} onAdd={() => setShowAddContact(true)} />

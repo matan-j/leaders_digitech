@@ -123,6 +123,52 @@ interface Assignment {
   end_date: string;
 }
 
+const CRMSettingsTab = () => {
+  const { user } = useAuth();
+  const [commission, setCommission] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    supabase.from('crm_settings').select('value').eq('key', 'instructor_commission').single()
+      .then(({ data }) => { if (data) setCommission(data.value ?? '0'); setLoaded(true); });
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    await supabase.from('crm_settings')
+      .upsert({ key: 'instructor_commission', value: commission, updated_by: user?.id, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    setSaving(false);
+  };
+
+  if (!loaded) return <Card><CardContent className="p-6 text-sm text-gray-500">טוען...</CardContent></Card>;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>הגדרות CRM</CardTitle>
+        <CardDescription>הגדרות כלליות למודול ה-CRM</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 max-w-sm">
+        <div className="space-y-2">
+          <Label htmlFor="commission">עמלה למדריך מוכר (₪ לעסקה)</Label>
+          <Input
+            id="commission"
+            type="number"
+            min="0"
+            value={commission}
+            onChange={e => setCommission(e.target.value)}
+          />
+        </div>
+        <Button onClick={save} disabled={saving}>
+          {saving ? <Loader2 className="animate-spin h-4 w-4 ml-2" /> : <Save className="h-4 w-4 ml-2" />}
+          שמור
+        </Button>
+      </CardContent>
+    </Card>
+  );
+};
+
 const AdminSettings = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('defaults');
@@ -882,7 +928,7 @@ const getRoleBadge = (role: string) => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className={isAdmin?"grid w-full grid-cols-2 md:grid-cols-5 mb-6":"grid w-full grid-cols-2 md:grid-cols-4 mb-6"}>
+          <TabsList className={isAdmin?"grid w-full grid-cols-2 md:grid-cols-6 mb-6":"grid w-full grid-cols-2 md:grid-cols-4 mb-6"}>
             <TabsTrigger value="defaults" className="flex items-center gap-2">
               <Clock className="h-4 w-4" />
               <span>ברירות מחדל</span>
@@ -903,6 +949,12 @@ const getRoleBadge = (role: string) => {
             <TabsTrigger value="system-users" className="flex items-center gap-2">
               <Shield className="h-4 w-4" />
               <span>משתמשי מערכת</span>
+            </TabsTrigger>
+          )}
+          {isAdmin && (
+            <TabsTrigger value="crm-settings" className="flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              <span>הגדרות CRM</span>
             </TabsTrigger>
           )}
           </TabsList>
@@ -1226,7 +1278,11 @@ const getRoleBadge = (role: string) => {
   </TabsContent>
 )}
 
-
+{isAdmin && (
+  <TabsContent value="crm-settings">
+    <CRMSettingsTab />
+  </TabsContent>
+)}
 
 
 

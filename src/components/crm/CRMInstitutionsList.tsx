@@ -422,19 +422,105 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
   );
 };
 
+// ── AddInstitutionModal ───────────────────────────────────────
+
+interface AddInstitutionModalProps {
+  onClose: () => void;
+  onAdded: () => void;
+}
+
+const AddInstitutionModal = ({ onClose, onAdded }: AddInstitutionModalProps) => {
+  const [name, setName] = useState('');
+  const [city, setCity] = useState('');
+  const [crmClass, setCrmClass] = useState<string>('Lead');
+  const [crmStage, setCrmStage] = useState<string>('יצירת קשר');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (!name.trim()) { setError('שם מוסד הוא שדה חובה'); return; }
+    setSaving(true);
+    const { error: dbErr } = await supabase
+      .from('educational_institutions')
+      .insert({ name: name.trim(), city: city.trim() || null, crm_class: crmClass, crm_stage: crmStage });
+    setSaving(false);
+    if (dbErr) { setError(dbErr.message); return; }
+    onAdded();
+    onClose();
+  };
+
+  const inputStyle = {
+    width: '100%', padding: '8px 11px', borderRadius: 7,
+    border: `1px solid ${C.border}`, fontSize: 13, color: C.text,
+    outline: 'none', boxSizing: 'border-box' as const,
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(15,17,23,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: C.surface, borderRadius: 12, width: 420, maxWidth: '95vw', boxShadow: '0 20px 60px rgba(0,0,0,0.22)' }} dir="rtl">
+        <div style={{ padding: '16px 22px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>+ הוסף מוסד</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 18, color: C.textSub, cursor: 'pointer' }}>✕</button>
+        </div>
+        <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: C.textSub, display: 'block', marginBottom: 5 }}>שם מוסד *</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="לדוגמה: בית ספר רמות" style={inputStyle} />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: C.textSub, display: 'block', marginBottom: 5 }}>עיר</label>
+            <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="לדוגמה: תל אביב" style={inputStyle} />
+          </div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: C.textSub, display: 'block', marginBottom: 5 }}>סיווג</label>
+              <select value={crmClass} onChange={(e) => setCrmClass(e.target.value)} style={{ ...inputStyle }}>
+                {CLASSES.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: C.textSub, display: 'block', marginBottom: 5 }}>שלב</label>
+              <select value={crmStage} onChange={(e) => setCrmStage(e.target.value)} style={{ ...inputStyle }}>
+                {STAGES.map((s) => <option key={s}>{s}</option>)}
+              </select>
+            </div>
+          </div>
+          {error && <div style={{ fontSize: 12, color: C.danger, background: C.dangerBg, padding: '8px 12px', borderRadius: 7 }}>{error}</div>}
+        </div>
+        <div style={{ padding: '13px 22px', borderTop: `1px solid ${C.border}`, display: 'flex', gap: 8 }}>
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 6, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', border: 'none', fontSize: 13, padding: '8px 14px', background: C.accent, color: '#fff', opacity: saving ? 0.7 : 1 }}
+          >
+            {saving ? 'שומר...' : '✓ הוסף מוסד'}
+          </button>
+          <button onClick={onClose} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 6, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, fontSize: 13, padding: '8px 14px', background: C.surface, color: C.text }}>
+            ביטול
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── main component ────────────────────────────────────────────
 
 interface Props {
   setTab: (tab: CRMTab) => void;
   mode: 'leads' | 'customers';
+  openCsvImport?: boolean;
 }
 
-const CRMInstitutionsList = ({ setTab: _setTab, mode }: Props) => {
+const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) => {
   const navigate = useNavigate();
   const [rows, setRows] = useState<InstitutionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCsv, setShowCsv] = useState(false);
+  const [showAddInstitution, setShowAddInstitution] = useState(false);
+  useEffect(() => { if (openCsvImport) setShowCsv(true); }, [openCsvImport]);
   const [assignTarget, setAssignTarget] = useState<InstitutionRow | null>(null);
+  const [assignToast, setAssignToast] = useState<string | null>(null);
 
   const [search, setSearch] = useState('');
   const [filterClass, setFilterClass] = useState('הכל');
@@ -537,11 +623,14 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode }: Props) => {
       ),
     );
     setAssignTarget(null);
+    setAssignToast(`✅ מדריך שויך — הודעה נשלחה ל${instructorName} עם פרטי הליד`);
+    setTimeout(() => setAssignToast(null), 4000);
   };
 
   return (
     <div dir="rtl" style={{ padding: '20px 24px', overflowY: 'auto' }}>
       {showCsv && <CsvModal onClose={() => setShowCsv(false)} onImportDone={fetchInstitutions} />}
+      {showAddInstitution && <AddInstitutionModal onClose={() => setShowAddInstitution(false)} onAdded={fetchInstitutions} />}
       {assignTarget && (
         <AssignInstructorModal
           institutionId={assignTarget.id}
@@ -550,6 +639,17 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode }: Props) => {
           onClose={() => setAssignTarget(null)}
           onAssigned={handleAssigned}
         />
+      )}
+
+      {assignToast && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 999, background: '#16A34A', color: '#fff',
+          padding: '10px 20px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+        }}>
+          {assignToast}
+        </div>
       )}
 
 
@@ -562,16 +662,23 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode }: Props) => {
           style={{ padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 13, width: 210, outline: 'none', color: C.text }}
         />
         <select value={filterClass} onChange={(e) => setFilterClass(e.target.value)} style={filterSelectStyle(filterClass !== 'הכל')}>
-          {['הכל', ...CLASSES].map((o) => <option key={o}>{o}</option>)}
+          <option value="הכל">{mode === 'leads' ? 'סיווג' : 'סטטוס'}</option>
+          {CLASSES.map((o) => <option key={o}>{o}</option>)}
         </select>
-        <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)} style={filterSelectStyle(filterStage !== 'הכל')}>
-          {['הכל', ...STAGES].map((o) => <option key={o}>{o}</option>)}
-        </select>
+        {mode === 'leads' && (
+          <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)} style={filterSelectStyle(filterStage !== 'הכל')}>
+            <option value="הכל">שלב בפייפליין</option>
+            {STAGES.map((o) => <option key={o}>{o}</option>)}
+          </select>
+        )}
         <select value={filterCity} onChange={(e) => setFilterCity(e.target.value)} style={filterSelectStyle(filterCity !== 'הכל')}>
-          {['הכל', ...cities].map((o) => <option key={o}>{o}</option>)}
+          <option value="הכל">עיר</option>
+          {cities.map((o) => <option key={o}>{o}</option>)}
         </select>
         <select value={filterInstructor} onChange={(e) => setFilterInstructor(e.target.value)} style={filterSelectStyle(filterInstructor !== 'הכל')}>
-          {['הכל', 'לא משויך', ...instructorNames].map((o) => <option key={o}>{o}</option>)}
+          <option value="הכל">מדריך</option>
+          <option value="לא משויך">לא משויך</option>
+          {instructorNames.map((o) => <option key={o}>{o}</option>)}
         </select>
         {hasActiveFilters && (
           <button onClick={clearFilters} style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${C.danger}30`, background: C.dangerBg, color: C.danger, fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>
@@ -582,7 +689,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode }: Props) => {
         <button onClick={() => setShowCsv(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 6, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, fontSize: 12, padding: '5px 11px', background: C.surface, color: C.text }}>
           📤 ייבוא CSV
         </button>
-        <button style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 6, fontWeight: 600, cursor: 'pointer', border: 'none', fontSize: 12, padding: '5px 11px', background: C.accent, color: '#fff' }}>
+        <button onClick={() => setShowAddInstitution(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 6, fontWeight: 600, cursor: 'pointer', border: 'none', fontSize: 12, padding: '5px 11px', background: C.accent, color: '#fff' }}>
           + הוסף מוסד
         </button>
       </div>

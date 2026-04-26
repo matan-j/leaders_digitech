@@ -13,25 +13,22 @@ interface PipelineStage {
   is_lost: boolean;
 }
 
-interface Opportunity {
+interface InstitutionRow {
   id: string;
-  institution_id: string;
   name: string;
-  stage: string;
-  value: number | null;
-  updated_at: string;
-  contact_id: string | null;
-  created_by: string | null;
-  institution: { name: string; city?: string } | null;
-  contact: { name: string } | null;
-  instructor: { full_name: string } | null;
+  city: string | null;
+  crm_stage: string | null;
+  crm_class: string | null;
+  crm_last_contact_at: string | null;
+  crm_potential: number | null;
+  instructor: { id: string; full_name: string } | null;
 }
 
 interface KPIs {
   pipelineValue: number;
-  openCount: number;
+  totalCount: number;
+  wonCount: number;
   winRate: number;
-  avgDays: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -40,8 +37,9 @@ function stageBg(color: string): string {
   return color + '18';
 }
 
-function isHot(updatedAt: string): boolean {
-  return Date.now() - new Date(updatedAt).getTime() < 3 * 24 * 60 * 60 * 1000;
+function isHot(iso: string | null): boolean {
+  if (!iso) return false;
+  return Date.now() - new Date(iso).getTime() < 3 * 24 * 60 * 60 * 1000;
 }
 
 function initials(name: string): string {
@@ -57,10 +55,10 @@ function fmt(n: number | null): string {
 
 function KpiStrip({ kpis }: { kpis: KPIs }) {
   const items = [
-    { label: 'שווי פייפליין',     value: fmt(kpis.pipelineValue) },
-    { label: 'הזדמנויות פתוחות', value: String(kpis.openCount) },
-    { label: 'שיעור המרה',        value: kpis.winRate.toFixed(0) + '%' },
-    { label: 'ממוצע ימים לסגירה', value: kpis.avgDays ? kpis.avgDays.toFixed(0) + 'd' : '—' },
+    { label: 'שווי פוטנציאל',  value: fmt(kpis.pipelineValue) },
+    { label: 'מוסדות בפייפליין', value: String(kpis.totalCount) },
+    { label: 'לקוחות (זכו)',    value: String(kpis.wonCount) },
+    { label: 'שיעור המרה',      value: kpis.winRate.toFixed(0) + '%' },
   ];
   return (
     <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
@@ -74,29 +72,27 @@ function KpiStrip({ kpis }: { kpis: KPIs }) {
   );
 }
 
-// ─── Opportunity card ─────────────────────────────────────────────────────────
+// ─── Institution card ─────────────────────────────────────────────────────────
 
-function OppCard({ opp, stageColor, onDragStart }: { opp: Opportunity; stageColor: string; onDragStart: (id: string) => void }) {
-  const hot = isHot(opp.updated_at);
-  const instrName = opp.instructor?.full_name ?? null;
+function InstitutionCard({ inst, stageColor, onDragStart }: { inst: InstitutionRow; stageColor: string; onDragStart: (id: string) => void }) {
+  const hot = isHot(inst.crm_last_contact_at);
+  const instrName = inst.instructor?.full_name ?? null;
 
   return (
     <div
       draggable
-      onDragStart={() => onDragStart(opp.id)}
+      onDragStart={() => onDragStart(inst.id)}
       style={{ background: '#fff', border: '1px solid #E4E7ED', borderTop: `3px solid ${stageColor}`, borderRadius: 8, padding: '12px 14px', cursor: 'grab', userSelect: 'none' }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-        <div style={{ fontWeight: 600, fontSize: 13, color: '#111827', lineHeight: 1.3 }}>
-          {opp.institution?.name ?? opp.name}
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+        <div style={{ fontWeight: 600, fontSize: 13, color: '#111827', lineHeight: 1.3 }}>{inst.name}</div>
         {hot && (
           <span style={{ fontSize: 11, background: '#FEF3C7', color: '#D97706', borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap', marginRight: 6 }}>
             🔥 חם
           </span>
         )}
       </div>
-      {opp.contact && <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 4 }}>{opp.contact.name}</div>}
+      {inst.city && <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 6 }}>📍 {inst.city}</div>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
         {instrName ? (
           <>
@@ -110,8 +106,12 @@ function OppCard({ opp, stageColor, onDragStart }: { opp: Opportunity; stageColo
         )}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: '#16A34A' }}>{fmt(opp.value)}</span>
-        <span style={{ fontSize: 10, color: '#9CA3AF' }}>{new Date(opp.updated_at).toLocaleDateString('he-IL')}</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#16A34A' }}>{fmt(inst.crm_potential)}</span>
+        {inst.crm_last_contact_at && (
+          <span style={{ fontSize: 10, color: '#9CA3AF' }}>
+            {new Date(inst.crm_last_contact_at).toLocaleDateString('he-IL')}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -119,9 +119,9 @@ function OppCard({ opp, stageColor, onDragStart }: { opp: Opportunity; stageColo
 
 // ─── Kanban column ────────────────────────────────────────────────────────────
 
-function KanbanColumn({ stage, opps, onDragStart, onDrop }: {
+function KanbanColumn({ stage, rows, onDragStart, onDrop }: {
   stage: PipelineStage;
-  opps: Opportunity[];
+  rows: InstitutionRow[];
   onDragStart: (id: string) => void;
   onDrop: (stageName: string) => void;
 }) {
@@ -139,12 +139,12 @@ function KanbanColumn({ stage, opps, onDragStart, onDrop }: {
       <div style={{ background: bg, borderRadius: 8, padding: '10px 14px', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ fontWeight: 600, fontSize: 13, color }}>{stage.name}</span>
         <span style={{ fontSize: 11, background: color, color: '#fff', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {opps.length}
+          {rows.length}
         </span>
       </div>
       <div style={{ flex: 1, minHeight: 100, display: 'flex', flexDirection: 'column', gap: 8, background: over ? '#F0F4FF' : 'transparent', borderRadius: 8, border: over ? '2px dashed #3B5BDB' : '2px dashed transparent', padding: over ? 6 : 0, transition: 'all 0.15s' }}>
-        {opps.map((o) => (
-          <OppCard key={o.id} opp={o} stageColor={color} onDragStart={onDragStart} />
+        {rows.map((inst) => (
+          <InstitutionCard key={inst.id} inst={inst} stageColor={color} onDragStart={onDragStart} />
         ))}
       </div>
     </div>
@@ -479,9 +479,9 @@ function AutomationRulesSection({ currentUserId }: { currentUserId: string | und
 export default function CRMPipeline() {
   const { user } = useAuth();
   const [stages, setStages] = useState<PipelineStage[]>([]);
-  const [opps, setOpps] = useState<Opportunity[]>([]);
+  const [institutions, setInstitutions] = useState<InstitutionRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [kpis, setKpis] = useState<KPIs>({ pipelineValue: 0, openCount: 0, winRate: 0, avgDays: 0 });
+  const [kpis, setKpis] = useState<KPIs>({ pipelineValue: 0, totalCount: 0, wonCount: 0, winRate: 0 });
   const [filterInstructor, setFilterInstructor] = useState('');
   const [filterCity, setFilterCity] = useState('');
   const [instructors, setInstructors] = useState<{ id: string; full_name: string }[]>([]);
@@ -494,82 +494,76 @@ export default function CRMPipeline() {
     if (data) setStages(data as PipelineStage[]);
   }, []);
 
-  useEffect(() => {
-    loadStages();
-    load();
-  }, [loadStages]);
-
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase
-      .from('crm_opportunities')
+      .from('educational_institutions')
       .select(`
-        id, institution_id, name, stage, value, updated_at, contact_id, created_by,
-        institution:educational_institutions(name, city),
-        contact:crm_contacts(name),
-        instructor:profiles!crm_opportunities_created_by_fkey(full_name)
+        id, name, city, crm_stage, crm_class, crm_last_contact_at, crm_potential,
+        instructor:crm_assigned_instructor_id (id, full_name)
       `)
-      .in('status', ['open'])
-      .order('updated_at', { ascending: false });
+      .eq('crm_class', 'Lead')
+      .order('name');
 
     if (!error && data) {
-      const rows = data as unknown as Opportunity[];
-      setOpps(rows);
+      const rows = data as unknown as InstitutionRow[];
+      setInstitutions(rows);
 
-      const pipelineValue = rows.reduce((s, o) => s + (o.value ?? 0), 0);
-      const openCount = rows.length;
-
-      const { data: allData } = await supabase.from('crm_opportunities').select('status, created_at, updated_at').in('status', ['won', 'lost', 'open']);
-      let wonCount = 0, closedCount = 0, totalDays = 0;
-      if (allData) {
-        allData.forEach((o: any) => {
-          if (o.status === 'won') { wonCount++; closedCount++; }
-          if (o.status === 'lost') closedCount++;
-          if (o.status === 'won' || o.status === 'lost') {
-            totalDays += (new Date(o.updated_at).getTime() - new Date(o.created_at).getTime()) / 86400000;
-          }
-        });
-      }
-      setKpis({ pipelineValue, openCount, winRate: closedCount > 0 ? (wonCount / closedCount) * 100 : 0, avgDays: closedCount > 0 ? totalDays / closedCount : 0 });
+      const pipelineValue = rows.reduce((s, r) => s + (r.crm_potential ?? 0), 0);
+      const totalCount = rows.length;
+      const wonCount = rows.filter((r) => r.crm_class === 'Customer').length;
+      const winRate = totalCount > 0 ? (wonCount / totalCount) * 100 : 0;
+      setKpis({ pipelineValue, totalCount, wonCount, winRate });
 
       const instrMap = new Map<string, string>();
       const citySet = new Set<string>();
-      rows.forEach((o) => {
-        if (o.instructor?.full_name) instrMap.set(o.created_by ?? '', o.instructor.full_name);
-        const city = (o.institution as any)?.city;
-        if (city) citySet.add(city);
+      rows.forEach((r) => {
+        if (r.instructor?.id && r.instructor.full_name) instrMap.set(r.instructor.id, r.instructor.full_name);
+        if (r.city) citySet.add(r.city);
       });
       setInstructors([...instrMap.entries()].map(([id, full_name]) => ({ id, full_name })));
       setCities([...citySet]);
     }
     setLoading(false);
-  }
+  }, []);
+
+  useEffect(() => {
+    loadStages();
+    load();
+  }, [loadStages, load]);
 
   async function handleDrop(targetStageName: string) {
     if (!draggingId.current) return;
     const id = draggingId.current;
     draggingId.current = null;
 
-    const opp = opps.find((o) => o.id === id);
     const targetStage = stages.find((s) => s.name === targetStageName);
+    const oldStage = institutions.find((r) => r.id === id)?.crm_stage ?? null;
 
-    setOpps((prev) => prev.map((o) => (o.id === id ? { ...o, stage: targetStageName } : o)));
+    setInstitutions((prev) => prev.map((r) => r.id === id ? { ...r, crm_stage: targetStageName } : r));
 
-    const { error } = await supabase.from('crm_opportunities').update({ stage: targetStageName, updated_at: new Date().toISOString() }).eq('id', id);
+    const patch: Record<string, string> = { crm_stage: targetStageName };
+    if (targetStage?.is_won) patch.crm_class = 'Customer';
+    if (targetStage?.is_lost) patch.crm_class = 'Lead';
+
+    const { error } = await supabase.from('educational_institutions').update(patch).eq('id', id);
     if (error) { load(); return; }
 
-    if (targetStage?.is_won && opp?.institution_id) {
-      await supabase.from('educational_institutions').update({ crm_class: 'Customer' }).eq('id', opp.institution_id);
-    }
+    supabase.functions.invoke('crm-automation-trigger', {
+      body: { institution_id: id, new_stage: targetStageName, old_stage: oldStage },
+    }).catch(() => { /* fire-and-forget */ });
   }
 
-  const filtered = opps.filter((o) => {
-    if (filterInstructor && o.created_by !== filterInstructor) return false;
-    if (filterCity && (o.institution as any)?.city !== filterCity) return false;
+  const firstStageName = stages[0]?.name ?? '';
+
+  const filtered = institutions.filter((r) => {
+    if (filterInstructor && r.instructor?.id !== filterInstructor) return false;
+    if (filterCity && r.city !== filterCity) return false;
     return true;
   });
 
-  const byStage = (stageName: string) => filtered.filter((o) => o.stage === stageName);
+  const byStage = (stageName: string, isFirst: boolean) =>
+    filtered.filter((r) => isFirst ? (r.crm_stage === stageName || r.crm_stage === null) : r.crm_stage === stageName);
 
   return (
     <div dir="rtl" style={{ padding: '24px', background: '#F8F9FB', minHeight: '100%' }}>
@@ -609,11 +603,11 @@ export default function CRMPipeline() {
         <div style={{ color: '#6B7280', fontSize: 14 }}>טוען...</div>
       ) : (
         <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 16 }}>
-          {stages.map((stage) => (
+          {stages.map((stage, idx) => (
             <KanbanColumn
               key={stage.id}
               stage={stage}
-              opps={byStage(stage.name)}
+              rows={byStage(stage.name, idx === 0)}
               onDragStart={(id) => { draggingId.current = id; }}
               onDrop={handleDrop}
             />

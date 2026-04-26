@@ -25,6 +25,7 @@ const NAV_TABS: { id: CRMTab; label: string }[] = [
 
 const CRM = () => {
   const [activeTab, setActiveTab] = useState<CRMTab>('dashboard');
+  const [openCsvImport, setOpenCsvImport] = useState(false);
 
   return (
     <div dir="rtl" className="min-h-screen" style={{ background: '#F8F9FB' }}>
@@ -62,8 +63,8 @@ const CRM = () => {
 
       {/* Tab content */}
       <div>
-        {activeTab === 'dashboard' && <CRMDashboard setTab={setActiveTab} />}
-        {activeTab === 'leads'     && <CRMInstitutionsList setTab={setActiveTab} mode="leads" />}
+        {activeTab === 'dashboard' && <CRMDashboard setTab={setActiveTab} onOpenCsvImport={() => { setOpenCsvImport(true); setActiveTab('leads'); }} />}
+        {activeTab === 'leads'     && <CRMInstitutionsList setTab={setActiveTab} mode="leads" openCsvImport={openCsvImport} />}
         {activeTab === 'customers' && <CRMInstitutionsList setTab={setActiveTab} mode="customers" />}
         {activeTab === 'pipeline'  && <CRMPipeline />}
         {activeTab === 'messages'  && <CRMMessagesEditor />}

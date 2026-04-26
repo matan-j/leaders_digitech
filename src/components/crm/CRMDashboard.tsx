@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { callCrmAI } from '@/hooks/useCrmAI';
 import type { CRMTab } from '@/pages/CRM';
@@ -123,6 +124,7 @@ const StatPill = ({ label, value, color, bg, onClick }: StatPillProps) => (
 
 interface Props {
   setTab: (tab: CRMTab) => void;
+  onOpenCsvImport: () => void;
 }
 
 const SECTION_ICONS: Record<string, string> = {
@@ -139,7 +141,8 @@ const SECTION_COLORS: Record<string, [string, string]> = {
   'המלצה לעכשיו':  [C.ai,      C.aiBg],
 };
 
-const CRMDashboard = ({ setTab }: Props) => {
+const CRMDashboard = ({ setTab, onOpenCsvImport }: Props) => {
+  const navigate = useNavigate();
   const [kpis, setKpis] = useState<KPIs>({
     newLeads: 0, inProgress: 0, activeCustomers: 0,
     openPotential: 0, openOpportunities: 0, overdueFollowups: 0,
@@ -308,20 +311,24 @@ const CRMDashboard = ({ setTab }: Props) => {
           <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>
             סטטוס פייפליין
           </div>
-          <StatPill label="לידים חדשים"      value={loadingKpis ? '...' : kpis.newLeads}        color={C.accent}  bg={C.accentBg}  onClick={() => setTab('list')} />
+          <StatPill label="לידים חדשים"      value={loadingKpis ? '...' : kpis.newLeads}        color={C.accent}  bg={C.accentBg}  onClick={() => setTab('leads')} />
           <StatPill label="בתהליך"            value={loadingKpis ? '...' : kpis.inProgress}      color={C.warning} bg={C.warningBg} onClick={() => setTab('pipeline')} />
-          <StatPill label="לקוחות פעילים"    value={loadingKpis ? '...' : kpis.activeCustomers} color={C.success} bg={C.successBg} onClick={() => setTab('list')} />
+          <StatPill label="לקוחות פעילים"    value={loadingKpis ? '...' : kpis.activeCustomers} color={C.success} bg={C.successBg} onClick={() => setTab('customers')} />
           <StatPill label="פוטנציאל פתוח"    value={loadingKpis ? '...' : `₪${kpis.openPotential}K`} color={C.purple} bg={C.purpleBg} onClick={() => setTab('pipeline')} />
           <StatPill label="הזדמנויות פתוחות" value={loadingKpis ? '...' : kpis.openOpportunities} color={C.teal}  bg={C.tealBg}   onClick={() => setTab('pipeline')} />
 
           <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: 6, marginBottom: 2 }}>
             פעולות מהירות
           </div>
+          <button
+            onClick={onOpenCsvImport}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 6, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, fontSize: 12, padding: '5px 11px', background: C.surface, color: C.text, justifyContent: 'flex-start', width: '100%' }}
+          >
+            📤 ייבוא CSV
+          </button>
           {([
-            { label: '📤 ייבוא CSV',         tab: 'list'      },
             { label: '💬 עורך הודעות',        tab: 'messages'  },
             { label: '📢 שליחה בקבוצות',      tab: 'broadcast' },
-            { label: '⏰ תור מעקב',           tab: 'followup'  },
           ] as { label: string; tab: CRMTab }[]).map((a) => (
             <button
               key={a.tab}
@@ -350,6 +357,7 @@ const CRMDashboard = ({ setTab }: Props) => {
             ) : hotLeads.map((h) => (
               <div
                 key={h.id}
+                onClick={() => navigate(`/crm/institution/${h.id}`)}
                 style={{
                   background: C.surface, border: `1px solid ${C.border}`,
                   borderRadius: 9, padding: '11px 14px', cursor: 'pointer',

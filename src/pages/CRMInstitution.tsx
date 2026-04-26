@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { callCrmAI } from '@/hooks/useCrmAI';
@@ -34,7 +34,7 @@ interface Institution {
 interface Contact {
   id: string; institution_id: string; name: string; phone: string | null;
   email: string | null; role: string | null; is_primary: boolean | null;
-  notes: string | null; created_at: string; updated_at: string;
+  notes: string | null; contact_type?: string | null; created_at: string; updated_at: string;
 }
 interface Opportunity {
   id: string; institution_id: string; name: string; course_id: string | null;
@@ -53,6 +53,9 @@ interface Activity {
 interface AIResult {
   score: string; closingChance: string; nextStep: string;
   risks: string; opportunities: string;
+}
+interface CrmFile {
+  name: string; size: number; created_at: string; path: string;
 }
 
 // ── shared mini-components ────────────────────────────────────
@@ -149,15 +152,17 @@ const selectStyle: React.CSSProperties = { ...inputStyle };
 
 // AddContact Modal
 interface AddContactModalProps { institutionId: string; onClose: () => void; onSaved: (c: Contact) => void; }
+const CONTACT_TYPES = ['מנהל', 'מנהל פדגוגי', 'אחראי פדגוגי', 'הנהלת חשבונות', 'אחר'];
+
 const AddContactModal = ({ institutionId, onClose, onSaved }: AddContactModalProps) => {
-  const [form, setForm] = useState({ name: '', role: '', phone: '', email: '', notes: '', is_primary: false });
+  const [form, setForm] = useState({ name: '', role: '', phone: '', email: '', notes: '', is_primary: false, contact_type: 'אחר' });
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: string | boolean) => setForm(p => ({ ...p, [k]: v }));
 
   const save = async () => {
     if (!form.name.trim()) return;
     setSaving(true);
-    const { data, error } = await supabase.from('crm_contacts').insert([{ institution_id: institutionId, name: form.name, role: form.role || null, phone: form.phone || null, email: form.email || null, notes: form.notes || null, is_primary: form.is_primary }]).select().single();
+    const { data, error } = await supabase.from('crm_contacts').insert([{ institution_id: institutionId, name: form.name, role: form.role || null, phone: form.phone || null, email: form.email || null, notes: form.notes || null, is_primary: form.is_primary, contact_type: form.contact_type }]).select().single();
     setSaving(false);
     if (!error && data) onSaved(data as Contact);
   };
@@ -165,12 +170,52 @@ const AddContactModal = ({ institutionId, onClose, onSaved }: AddContactModalPro
   return (
     <ModalShell title="+ איש קשר חדש" onClose={onClose} footer={<><Btn style={{ flex: 1, justifyContent: 'center' }} disabled={!form.name.trim() || saving} onClick={save}>{saving ? 'שומר...' : '✓ שמור'}</Btn><Btn variant="secondary" onClick={onClose}>ביטול</Btn></>}>
       <Field label="שם *"><input style={inputStyle} value={form.name} onChange={e => set('name', e.target.value)} placeholder="שם מלא" /></Field>
+      <Field label="סוג איש קשר">
+        <select style={selectStyle} value={form.contact_type} onChange={e => set('contact_type', e.target.value)}>
+          {CONTACT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </Field>
       <Field label="תפקיד"><input style={inputStyle} value={form.role} onChange={e => set('role', e.target.value)} placeholder="מנהל, מנהל חינוך..." /></Field>
       <Field label="טלפון"><input style={inputStyle} value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="05X-XXXXXXX" /></Field>
       <Field label="אימייל"><input style={inputStyle} type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="name@org.il" /></Field>
       <Field label="הערות"><textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 60 }} value={form.notes} onChange={e => set('notes', e.target.value)} /></Field>
       <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
         <input type="checkbox" checked={form.is_primary} onChange={e => set('is_primary', e.target.checked)} />
+        איש קשר ראשי
+      </label>
+    </ModalShell>
+  );
+};
+
+// EditContact Modal
+interface EditContactModalProps { contact: Contact; onClose: () => void; onSaved: (c: Contact) => void; }
+const EditContactModal = ({ contact, onClose, onSaved }: EditContactModalProps) => {
+  const [form, setForm] = useState({ name: contact.name, role: contact.role ?? '', phone: contact.phone ?? '', email: contact.email ?? '', notes: contact.notes ?? '', is_primary: contact.is_primary, contact_type: contact.contact_type ?? 'אחר' });
+  const [saving, setSaving] = useState(false);
+  const set = (k: string, v: string | boolean) => setForm(p => ({ ...p, [k]: v }));
+
+  const save = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    const { data, error } = await supabase.from('crm_contacts').update({ name: form.name, role: form.role || null, phone: form.phone || null, email: form.email || null, notes: form.notes || null, is_primary: form.is_primary, contact_type: form.contact_type, updated_at: new Date().toISOString() }).eq('id', contact.id).select().single();
+    setSaving(false);
+    if (!error && data) onSaved(data as Contact);
+  };
+
+  return (
+    <ModalShell title="✏️ עריכת איש קשר" onClose={onClose} footer={<><Btn style={{ flex: 1, justifyContent: 'center' }} disabled={!form.name.trim() || saving} onClick={save}>{saving ? 'שומר...' : '✓ שמור'}</Btn><Btn variant="secondary" onClick={onClose}>ביטול</Btn></>}>
+      <Field label="שם *"><input style={inputStyle} value={form.name} onChange={e => set('name', e.target.value)} placeholder="שם מלא" /></Field>
+      <Field label="סוג איש קשר">
+        <select style={selectStyle} value={form.contact_type} onChange={e => set('contact_type', e.target.value)}>
+          {CONTACT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </Field>
+      <Field label="תפקיד"><input style={inputStyle} value={form.role} onChange={e => set('role', e.target.value)} placeholder="מנהל, מנהל חינוך..." /></Field>
+      <Field label="טלפון"><input style={inputStyle} value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="05X-XXXXXXX" /></Field>
+      <Field label="אימייל"><input style={inputStyle} type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="name@org.il" /></Field>
+      <Field label="הערות"><textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 60 }} value={form.notes} onChange={e => set('notes', e.target.value)} /></Field>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+        <input type="checkbox" checked={form.is_primary ?? false} onChange={e => set('is_primary', e.target.checked)} />
         איש קשר ראשי
       </label>
     </ModalShell>
@@ -220,6 +265,56 @@ const AddOpportunityModal = ({ institutionId, contacts, onClose, onSaved }: AddO
   );
 };
 
+// EditOpportunity Modal
+interface EditOpportunityModalProps { opportunity: Opportunity; contacts: Contact[]; onClose: () => void; onSaved: (o: Opportunity) => void; }
+const EditOpportunityModal = ({ opportunity, contacts, onClose, onSaved }: EditOpportunityModalProps) => {
+  const [form, setForm] = useState({
+    name: opportunity.name,
+    stage: opportunity.stage,
+    contact_id: opportunity.contact_id ?? '',
+    value: opportunity.value?.toString() ?? '',
+    decision_date: opportunity.decision_date ?? '',
+    next_step: opportunity.next_step ?? '',
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
+
+  const save = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    const { data, error } = await supabase.from('crm_opportunities').update({
+      name: form.name, stage: form.stage,
+      contact_id: form.contact_id || null,
+      value: form.value ? parseFloat(form.value) : null,
+      decision_date: form.decision_date || null,
+      next_step: form.next_step || null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', opportunity.id).select().single();
+    setSaving(false);
+    if (!error && data) onSaved(data as Opportunity);
+  };
+
+  return (
+    <ModalShell title="✏️ עריכת הזדמנות" onClose={onClose} footer={<><Btn style={{ flex: 1, justifyContent: 'center' }} disabled={!form.name.trim() || saving} onClick={save}>{saving ? 'שומר...' : '✓ שמור'}</Btn><Btn variant="secondary" onClick={onClose}>ביטול</Btn></>}>
+      <Field label="שם הזדמנות *"><input style={inputStyle} value={form.name} onChange={e => set('name', e.target.value)} /></Field>
+      <Field label="שלב">
+        <select style={selectStyle} value={form.stage} onChange={e => set('stage', e.target.value)}>
+          {STAGES.map(s => <option key={s}>{s}</option>)}
+        </select>
+      </Field>
+      <Field label="איש קשר">
+        <select style={selectStyle} value={form.contact_id} onChange={e => set('contact_id', e.target.value)}>
+          <option value="">— בחר —</option>
+          {contacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </Field>
+      <Field label="ערך (₪)"><input style={inputStyle} type="number" value={form.value} onChange={e => set('value', e.target.value)} /></Field>
+      <Field label="תאריך החלטה"><input style={inputStyle} type="date" value={form.decision_date} onChange={e => set('decision_date', e.target.value)} /></Field>
+      <Field label="פעולה הבאה"><input style={inputStyle} value={form.next_step} onChange={e => set('next_step', e.target.value)} /></Field>
+    </ModalShell>
+  );
+};
+
 // LogActivity Modal
 const ACTIVITY_TYPES = ['שיחה', 'מייל', 'פגישה', 'וואטסאפ', 'אחר'];
 interface LogActivityModalProps { institutionId: string; contacts: Contact[]; opportunities: Opportunity[]; onClose: () => void; onSaved: (a: Activity) => void; }
@@ -230,8 +325,9 @@ const LogActivityModal = ({ institutionId, contacts, opportunities, onClose, onS
 
   const save = async () => {
     setSaving(true);
+    const { data: { user } } = await supabase.auth.getUser();
     const { data, error } = await supabase.from('crm_activities').insert([{
-      institution_id: institutionId, type: form.type,
+      institution_id: institutionId, type: form.type, user_id: user!.id,
       contact_id: form.contact_id || null, opportunity_id: form.opportunity_id || null,
       summary: form.summary || null, outcome: form.outcome || null, next_step: form.next_step || null,
       occurred_at: form.occurred_at, status: 'Completed',
@@ -263,6 +359,63 @@ const LogActivityModal = ({ institutionId, contacts, opportunities, onClose, onS
       <Field label="סיכום"><textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 70 }} value={form.summary} onChange={e => set('summary', e.target.value)} placeholder="מה דיברנו..." /></Field>
       <Field label="תוצאה"><input style={inputStyle} value={form.outcome} onChange={e => set('outcome', e.target.value)} placeholder="מה הוסכם..." /></Field>
       <Field label="פעולה הבאה"><input style={inputStyle} value={form.next_step} onChange={e => set('next_step', e.target.value)} placeholder="מה עושים אחר כך..." /></Field>
+    </ModalShell>
+  );
+};
+
+// EditActivity Modal
+interface EditActivityModalProps { activity: Activity; contacts: Contact[]; opportunities: Opportunity[]; onClose: () => void; onSaved: (a: Activity) => void; }
+const EditActivityModal = ({ activity, contacts, opportunities, onClose, onSaved }: EditActivityModalProps) => {
+  const [form, setForm] = useState({
+    type: activity.type,
+    contact_id: activity.contact_id ?? '',
+    opportunity_id: activity.opportunity_id ?? '',
+    summary: activity.summary ?? '',
+    outcome: activity.outcome ?? '',
+    next_step: activity.next_step ?? '',
+    occurred_at: activity.occurred_at.slice(0, 10),
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
+
+  const save = async () => {
+    setSaving(true);
+    const { data, error } = await supabase.from('crm_activities').update({
+      type: form.type,
+      contact_id: form.contact_id || null,
+      opportunity_id: form.opportunity_id || null,
+      summary: form.summary || null,
+      outcome: form.outcome || null,
+      next_step: form.next_step || null,
+      occurred_at: form.occurred_at,
+    }).eq('id', activity.id).select().single();
+    setSaving(false);
+    if (!error && data) onSaved(data as Activity);
+  };
+
+  return (
+    <ModalShell title="✏️ עריכת פעילות" onClose={onClose} footer={<><Btn style={{ flex: 1, justifyContent: 'center' }} disabled={saving} onClick={save}>{saving ? 'שומר...' : '✓ שמור'}</Btn><Btn variant="secondary" onClick={onClose}>ביטול</Btn></>}>
+      <Field label="סוג">
+        <select style={selectStyle} value={form.type} onChange={e => set('type', e.target.value)}>
+          {ACTIVITY_TYPES.map(t => <option key={t}>{t}</option>)}
+        </select>
+      </Field>
+      <Field label="תאריך"><input style={inputStyle} type="date" value={form.occurred_at} onChange={e => set('occurred_at', e.target.value)} /></Field>
+      <Field label="איש קשר">
+        <select style={selectStyle} value={form.contact_id} onChange={e => set('contact_id', e.target.value)}>
+          <option value="">— בחר —</option>
+          {contacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </Field>
+      <Field label="הזדמנות">
+        <select style={selectStyle} value={form.opportunity_id} onChange={e => set('opportunity_id', e.target.value)}>
+          <option value="">— בחר —</option>
+          {opportunities.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
+      </Field>
+      <Field label="סיכום"><textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 70 }} value={form.summary} onChange={e => set('summary', e.target.value)} /></Field>
+      <Field label="תוצאה"><input style={inputStyle} value={form.outcome} onChange={e => set('outcome', e.target.value)} /></Field>
+      <Field label="פעולה הבאה"><input style={inputStyle} value={form.next_step} onChange={e => set('next_step', e.target.value)} /></Field>
     </ModalShell>
   );
 };
@@ -301,7 +454,14 @@ const EditInstitutionModal = ({ institution, onClose, onSaved }: EditInstitution
     };
     const { error } = await supabase.from('educational_institutions').update(patch).eq('id', institution.id);
     setSaving(false);
-    if (!error) onSaved(patch);
+    if (!error) {
+      onSaved(patch);
+      if (form.crm_stage && form.crm_stage !== institution.crm_stage) {
+        supabase.functions.invoke('crm-automation-trigger', {
+          body: { institution_id: institution.id, new_stage: form.crm_stage, old_stage: institution.crm_stage ?? null },
+        }).catch(() => { /* fire-and-forget */ });
+      }
+    }
   };
 
   return (
@@ -404,14 +564,7 @@ const TabOverview = ({ institution, activities, contacts, onNotesSaved }: { inst
 };
 
 // ── tab: אנשי קשר ─────────────────────────────────────────────
-const FLAG_DEFS = [
-  { key: 'primary', label: 'ראשי', color: C.accent, bg: C.accentBg },
-  { key: 'decision_maker', label: 'מחליט', color: C.purple, bg: C.purpleBg },
-  { key: 'finance', label: 'כספים', color: C.success, bg: C.successBg },
-  { key: 'operator', label: 'מפעיל', color: C.orange, bg: C.orangeBg },
-];
-
-const TabContacts = ({ contacts, onAdd }: { contacts: Contact[]; onAdd: () => void }) => (
+const TabContacts = ({ contacts, onAdd, onEdit, onDelete }: { contacts: Contact[]; onAdd: () => void; onEdit: (c: Contact) => void; onDelete: (id: string) => void }) => (
   <div>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
       <span style={{ fontSize: 13, fontWeight: 600 }}>{contacts.length} אנשי קשר</span>
@@ -424,7 +577,7 @@ const TabContacts = ({ contacts, onAdd }: { contacts: Contact[]; onAdd: () => vo
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: C.bg }}>
-              {['שם', 'תפקיד', 'טלפון', 'אימייל', 'דגלים', 'עריכה'].map(h => (
+              {['שם', 'תפקיד', 'טלפון', 'אימייל', 'דגלים', 'פעולות'].map(h => (
                 <th key={h} style={{ padding: '8px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: C.textSub, borderBottom: `1px solid ${C.border}` }}>{h}</th>
               ))}
             </tr>
@@ -445,7 +598,12 @@ const TabContacts = ({ contacts, onAdd }: { contacts: Contact[]; onAdd: () => vo
                   {c.is_primary && <Badge label="ראשי" color={C.accent} bg={C.accentBg} />}
                 </td>
                 <td style={{ padding: '9px 12px' }}>
-                  <Btn variant="ghost" sm>עריכה</Btn>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <Btn variant="ghost" sm onClick={() => onEdit(c)}>✏️</Btn>
+                    <Btn variant="danger" sm onClick={() => {
+                      if (window.confirm(`למחוק את ${c.name}?`)) onDelete(c.id);
+                    }}>🗑️</Btn>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -457,7 +615,7 @@ const TabContacts = ({ contacts, onAdd }: { contacts: Contact[]; onAdd: () => vo
 );
 
 // ── tab: הזדמנויות ────────────────────────────────────────────
-const TabOpportunities = ({ opportunities, contacts, onAdd }: { opportunities: Opportunity[]; contacts: Contact[]; onAdd: () => void }) => {
+const TabOpportunities = ({ opportunities, contacts, onAdd, onEdit, onDelete }: { opportunities: Opportunity[]; contacts: Contact[]; onAdd: () => void; onEdit: (o: Opportunity) => void; onDelete: (id: string) => void }) => {
   const contactMap = Object.fromEntries(contacts.map(c => [c.id, c.name]));
   const STAGE_COLORS: Record<string, [string, string]> = { 'יצירת קשר': [C.textSub, C.bg], 'מעוניין': [C.accent, C.accentBg], 'סגירה': [C.warning, C.warningBg], 'זכה': [C.success, C.successBg], 'הפסיד': [C.danger, C.dangerBg] };
 
@@ -479,6 +637,10 @@ const TabOpportunities = ({ opportunities, contacts, onAdd }: { opportunities: O
                   <span style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>{o.name}</span>
                   <Badge label={o.stage} color={sc} bg={sbg} />
                   {o.value != null && <span style={{ fontSize: 13, fontWeight: 800, color: C.success }}>₪{Number(o.value).toLocaleString('he-IL')}</span>}
+                  <Btn variant="ghost" sm onClick={() => onEdit(o)}>✏️</Btn>
+                  <Btn variant="danger" sm onClick={() => {
+                    if (window.confirm(`למחוק את "${o.name}"?`)) onDelete(o.id);
+                  }}>🗑️</Btn>
                 </div>
                 <div style={{ display: 'flex', gap: 16, fontSize: 11, color: C.textSub }}>
                   {o.contact_id && <span>👤 {contactMap[o.contact_id] ?? '—'}</span>}
@@ -499,7 +661,7 @@ const TabOpportunities = ({ opportunities, contacts, onAdd }: { opportunities: O
 const TYPE_ICON: Record<string, string> = { שיחה: '📞', מייל: '📧', פגישה: '🤝', וואטסאפ: '📱', אחר: '📝' };
 const STATUS_COLORS: Record<string, [string, string]> = { Open: [C.warning, C.warningBg], Waiting: [C.accent, C.accentBg], Completed: [C.success, C.successBg] };
 
-const TabActivity = ({ activities, contacts, opportunities, onLog }: { activities: Activity[]; contacts: Contact[]; opportunities: Opportunity[]; onLog: () => void }) => {
+const TabActivity = ({ activities, contacts, opportunities, onLog, onEdit, onDelete }: { activities: Activity[]; contacts: Contact[]; opportunities: Opportunity[]; onLog: () => void; onEdit: (a: Activity) => void; onDelete: (id: string) => void }) => {
   const contactMap = Object.fromEntries(contacts.map(c => [c.id, c.name]));
   const oppMap = Object.fromEntries(opportunities.map(o => [o.id, o.name]));
 
@@ -514,7 +676,7 @@ const TabActivity = ({ activities, contacts, opportunities, onLog }: { activitie
       ) : (
         <div style={{ position: 'relative' }}>
           <div style={{ position: 'absolute', right: 19, top: 0, bottom: 0, width: 2, background: C.borderLight }} />
-          {activities.map((a, i) => {
+          {activities.map(a => {
             const [sc, sbg] = STATUS_COLORS[a.status] ?? [C.textSub, C.bg];
             return (
               <div key={a.id} style={{ display: 'flex', gap: 16, marginBottom: 16, position: 'relative' }}>
@@ -528,6 +690,12 @@ const TabActivity = ({ activities, contacts, opportunities, onLog }: { activitie
                     {a.contact_id && <span style={{ fontSize: 11, color: C.textSub }}>👤 {contactMap[a.contact_id] ?? '—'}</span>}
                     {a.opportunity_id && <span style={{ fontSize: 11, color: C.textSub }}>🎯 {oppMap[a.opportunity_id] ?? '—'}</span>}
                     <Badge label={a.status} color={sc} bg={sbg} />
+                    <div style={{ marginRight: 'auto', display: 'flex', gap: 4 }}>
+                      <Btn variant="ghost" sm onClick={() => onEdit(a)}>✏️</Btn>
+                      <Btn variant="danger" sm onClick={() => {
+                        if (window.confirm('למחוק פעילות זו?')) onDelete(a.id);
+                      }}>🗑️</Btn>
+                    </div>
                   </div>
                   {a.summary && <div style={{ fontSize: 12, color: C.text, marginBottom: 3 }}>{a.summary}</div>}
                   {a.outcome && <div style={{ fontSize: 11, color: C.textSub }}>↳ {a.outcome}</div>}
@@ -536,6 +704,146 @@ const TabActivity = ({ activities, contacts, opportunities, onLog }: { activitie
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── tab: תקשורת ───────────────────────────────────────────────
+const TabCommunication = ({ activities, contacts, onWhatsApp, onEmail }: { activities: Activity[]; contacts: Contact[]; onWhatsApp: () => void; onEmail: () => void }) => {
+  const contactMap = Object.fromEntries(contacts.map(c => [c.id, c.name]));
+  const msgs = activities.filter(a => a.type === 'מייל' || a.type === 'וואטסאפ');
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{msgs.length} הודעות</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Btn variant="teal" sm onClick={onWhatsApp}>📱 וואטסאפ</Btn>
+          <Btn variant="ghost" sm onClick={onEmail}>📧 מייל</Btn>
+        </div>
+      </div>
+      {msgs.length === 0 ? (
+        <div style={{ padding: '40px', textAlign: 'center', color: C.textDim, fontSize: 13 }}>
+          <div style={{ fontSize: 28, marginBottom: 10 }}>💬</div>
+          אין תקשורת עדיין — שלח מייל או וואטסאפ
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {msgs.map(a => (
+            <div key={a.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <div style={{ fontSize: 22, flexShrink: 0 }}>{a.type === 'מייל' ? '📧' : '📱'}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700 }}>{a.type}</span>
+                  <span style={{ fontSize: 11, color: C.textDim }}>{formatDate(a.occurred_at)}</span>
+                  {a.contact_id && <span style={{ fontSize: 11, color: C.textSub }}>👤 {contactMap[a.contact_id] ?? '—'}</span>}
+                </div>
+                {a.summary && <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>{a.summary}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── tab: קבצים ────────────────────────────────────────────────
+const TabFiles = ({ institutionId }: { institutionId: string }) => {
+  const [files, setFiles] = useState<CrmFile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const prefix = `crm/${institutionId}/`;
+
+  const loadFiles = async () => {
+    setLoading(true);
+    const { data } = await supabase.storage.from('lesson-files').list(`crm/${institutionId}`, { sortBy: { column: 'created_at', order: 'desc' } });
+    if (data) {
+      setFiles(data.filter(f => f.name !== '.emptyFolderPlaceholder').map(f => ({
+        name: f.name,
+        size: f.metadata?.size ?? 0,
+        created_at: f.created_at ?? '',
+        path: `${prefix}${f.name}`,
+      })));
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadFiles(); }, [institutionId]);
+
+  const upload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    const safeName = `${Date.now()}_${file.name.replace(/[^\w.\-]/g, '_')}`;
+    await supabase.storage.from('lesson-files').upload(`${prefix}${safeName}`, file);
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    await loadFiles();
+  };
+
+  const deleteFile = async (path: string, name: string) => {
+    if (!window.confirm(`למחוק את "${name}"?`)) return;
+    await supabase.storage.from('lesson-files').remove([path]);
+    setFiles(p => p.filter(f => f.path !== path));
+  };
+
+  const getUrl = (path: string) => supabase.storage.from('lesson-files').getPublicUrl(path).data.publicUrl;
+
+  const fmtSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{files.length} קבצים</span>
+        <div>
+          <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={upload} />
+          <Btn sm onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+            {uploading ? 'מעלה...' : '⬆️ העלה קובץ'}
+          </Btn>
+        </div>
+      </div>
+      {loading ? (
+        <div style={{ padding: '32px', textAlign: 'center', color: C.textDim, fontSize: 13 }}>טוען...</div>
+      ) : files.length === 0 ? (
+        <div style={{ padding: '40px', textAlign: 'center', color: C.textDim, fontSize: 13 }}>
+          <div style={{ fontSize: 28, marginBottom: 10 }}>📁</div>
+          אין קבצים עדיין
+        </div>
+      ) : (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: C.bg }}>
+                {['שם קובץ', 'גודל', 'תאריך', 'הורדה', 'מחיקה'].map(h => (
+                  <th key={h} style={{ padding: '8px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: C.textSub, borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {files.map(f => (
+                <tr key={f.path} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
+                  <td style={{ padding: '9px 12px', fontSize: 13 }}>📄 {f.name}</td>
+                  <td style={{ padding: '9px 12px', fontSize: 12, color: C.textSub }}>{fmtSize(f.size)}</td>
+                  <td style={{ padding: '9px 12px', fontSize: 12, color: C.textSub }}>{formatDate(f.created_at)}</td>
+                  <td style={{ padding: '9px 12px' }}>
+                    <a href={getUrl(f.path)} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: C.accent, textDecoration: 'none', fontWeight: 500 }}>⬇️ הורד</a>
+                  </td>
+                  <td style={{ padding: '9px 12px' }}>
+                    <Btn variant="danger" sm onClick={() => deleteFile(f.path, f.name)}>🗑️</Btn>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -562,7 +870,6 @@ const TabAI = ({ institution, opportunities, activities }: { institution: Instit
         lastActivities: activities.slice(0, 5).map(a => ({ type: a.type, summary: a.summary, occurred_at: a.occurred_at })),
       });
 
-      // Edge function returns JSON: { score, close_probability, next_step, risks, opportunities }
       let parsed: { score?: string | number; close_probability?: string; next_step?: string; risks?: string[]; opportunities?: string[] };
       try {
         parsed = JSON.parse(raw) as typeof parsed;
@@ -620,6 +927,174 @@ const TabAI = ({ institution, opportunities, activities }: { institution: Instit
   );
 };
 
+// ── helpers ───────────────────────────────────────────────────
+async function callGHL(action: string, payload: Record<string, string>) {
+  const { data, error } = await supabase.functions.invoke('crm-ghl', {
+    body: { action, payload },
+  });
+  if (error) throw error;
+  if (data && !data.ok) throw new Error(data.error ?? 'GHL error');
+  return data;
+}
+
+function replaceVars(text: string, vars: Record<string, string>) {
+  return text.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
+}
+
+// SendWhatsApp Modal
+interface MessageTemplate { id: string; name: string; channel: string; body: string; subject: string | null; variables: string[] | null }
+interface SendWhatsAppModalProps { contacts: Contact[]; institutionName: string; institutionId: string; onClose: () => void; onSent: (a: Activity) => void; }
+const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, onSent }: SendWhatsAppModalProps) => {
+  const [contactId, setContactId] = useState(contacts[0]?.id ?? '');
+  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  const [templateId, setTemplateId] = useState('');
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    supabase.from('crm_message_templates').select('id, name, channel, body, subject, variables').eq('channel', 'whatsapp').then(({ data }) => {
+      if (data) setTemplates(data as MessageTemplate[]);
+    });
+  }, []);
+
+  const selectedContact = contacts.find(c => c.id === contactId);
+  const selectedTemplate = templates.find(t => t.id === templateId);
+
+  useEffect(() => {
+    if (selectedTemplate && selectedContact) {
+      setMessage(replaceVars(selectedTemplate.body, { שם: selectedContact.name, מוסד: institutionName }));
+    }
+  }, [templateId, contactId, selectedTemplate, selectedContact, institutionName]);
+
+  const preview = selectedContact ? replaceVars(message, { שם: selectedContact.name, מוסד: institutionName }) : message;
+
+  const send = async () => {
+    if (!selectedContact?.phone || !message.trim()) return;
+    setSending(true); setError('');
+    try {
+      await callGHL('send_whatsapp', { phone: selectedContact.phone, message: preview, contactName: selectedContact.name });
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: act } = await supabase.from('crm_activities').insert([{
+        institution_id: institutionId, type: 'וואטסאפ', user_id: user!.id,
+        contact_id: contactId || null, summary: preview.slice(0, 200), status: 'Completed',
+        occurred_at: new Date().toISOString(),
+      }]).select().single();
+      if (act) onSent(act as Activity);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'שגיאה');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <ModalShell title="📱 שלח וואטסאפ" onClose={onClose} footer={
+      <><Btn style={{ flex: 1, justifyContent: 'center' }} disabled={sending || !selectedContact?.phone || !message.trim()} onClick={send}>{sending ? 'שולח...' : '📱 שלח'}</Btn><Btn variant="secondary" onClick={onClose}>ביטול</Btn></>
+    }>
+      <Field label="איש קשר">
+        <select style={selectStyle} value={contactId} onChange={e => setContactId(e.target.value)}>
+          {contacts.map(c => <option key={c.id} value={c.id}>{c.name}{c.phone ? ` — ${c.phone}` : ' (ללא טלפון)'}</option>)}
+        </select>
+      </Field>
+      {!selectedContact?.phone && <div style={{ fontSize: 12, color: C.danger, marginBottom: 10 }}>⚠️ לאיש קשר זה אין מספר טלפון</div>}
+      <Field label="תבנית (אופציונלי)">
+        <select style={selectStyle} value={templateId} onChange={e => setTemplateId(e.target.value)}>
+          <option value="">— הודעה מותאמת —</option>
+          {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+      </Field>
+      <Field label="הודעה">
+        <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 100 }} value={message} onChange={e => setMessage(e.target.value)} placeholder="כתוב הודעה..." />
+      </Field>
+      {message && (
+        <div style={{ padding: '10px 14px', borderRadius: 8, background: '#DCF8C6', fontSize: 12, color: C.text, whiteSpace: 'pre-wrap', marginBottom: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: C.textSub, marginBottom: 4 }}>תצוגה מקדימה</div>
+          {preview}
+        </div>
+      )}
+      {error && <div style={{ fontSize: 12, color: C.danger, marginTop: 6 }}>❌ {error}</div>}
+    </ModalShell>
+  );
+};
+
+// SendEmail Modal
+interface SendEmailModalProps { contacts: Contact[]; institutionName: string; institutionId: string; onClose: () => void; onSent: (a: Activity) => void; }
+const SendEmailModal = ({ contacts, institutionName, institutionId, onClose, onSent }: SendEmailModalProps) => {
+  const [contactId, setContactId] = useState(contacts[0]?.id ?? '');
+  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  const [templateId, setTemplateId] = useState('');
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    supabase.from('crm_message_templates').select('id, name, channel, body, subject, variables').eq('channel', 'email').then(({ data }) => {
+      if (data) setTemplates(data as MessageTemplate[]);
+    });
+  }, []);
+
+  const selectedContact = contacts.find(c => c.id === contactId);
+  const selectedTemplate = templates.find(t => t.id === templateId);
+
+  useEffect(() => {
+    if (selectedTemplate && selectedContact) {
+      const vars = { שם: selectedContact.name, מוסד: institutionName };
+      setBody(replaceVars(selectedTemplate.body, vars));
+      if (selectedTemplate.subject) setSubject(replaceVars(selectedTemplate.subject, vars));
+    }
+  }, [templateId, contactId, selectedTemplate, selectedContact, institutionName]);
+
+  const send = async () => {
+    console.log('sending email...', { email: selectedContact?.email, bodyLength: body.trim().length });
+    if (!selectedContact?.email || !body.trim()) return;
+    setSending(true); setError('');
+    try {
+      console.log('guard passed, calling callGHL...')
+      const result = await callGHL('send_email', { email: selectedContact.email, subject: subject || '(ללא נושא)', body, contactName: selectedContact.name });
+      console.log('callGHL result:', result)
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: act } = await supabase.from('crm_activities').insert([{
+        institution_id: institutionId, type: 'מייל', user_id: user!.id,
+        contact_id: contactId || null, summary: `${subject ? subject + ': ' : ''}${body.slice(0, 160)}`, status: 'Completed',
+        occurred_at: new Date().toISOString(),
+      }]).select().single();
+      if (act) onSent(act as Activity);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'שגיאה');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <ModalShell title="📧 שלח מייל" onClose={onClose} footer={
+      <><Btn style={{ flex: 1, justifyContent: 'center' }} disabled={sending || !selectedContact?.email || !body.trim()} onClick={send}>{sending ? 'שולח...' : '📧 שלח'}</Btn><Btn variant="secondary" onClick={onClose}>ביטול</Btn>{!selectedContact?.email && <span style={{ fontSize: 11, color: '#e55', marginTop: 4, display: 'block', textAlign: 'center', width: '100%' }}>לאיש קשר זה אין כתובת מייל</span>}</>
+    }>
+      <Field label="איש קשר">
+        <select style={selectStyle} value={contactId} onChange={e => setContactId(e.target.value)}>
+          {contacts.map(c => <option key={c.id} value={c.id}>{c.name}{c.email ? ` — ${c.email}` : ' (ללא אימייל)'}</option>)}
+        </select>
+      </Field>
+      {!selectedContact?.email && <div style={{ fontSize: 12, color: C.danger, marginBottom: 10 }}>⚠️ לאיש קשר זה אין כתובת מייל</div>}
+      <Field label="תבנית (אופציונלי)">
+        <select style={selectStyle} value={templateId} onChange={e => setTemplateId(e.target.value)}>
+          <option value="">— הודעה מותאמת —</option>
+          {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+      </Field>
+      <Field label="נושא"><input style={inputStyle} value={subject} onChange={e => setSubject(e.target.value)} placeholder="נושא המייל" /></Field>
+      <Field label="תוכן">
+        <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 120 }} value={body} onChange={e => setBody(e.target.value)} placeholder="תוכן המייל..." />
+      </Field>
+      {error && <div style={{ fontSize: 12, color: C.danger, marginTop: 6 }}>❌ {error}</div>}
+    </ModalShell>
+  );
+};
+
 // ── MAIN PAGE ─────────────────────────────────────────────────
 const CRMInstitution = () => {
   const { id } = useParams<{ id: string }>();
@@ -632,9 +1107,14 @@ const CRMInstitution = () => {
   const [loading, setLoading] = useState(true);
 
   const [showAddContact, setShowAddContact] = useState(false);
+  const [editContact, setEditContact] = useState<Contact | null>(null);
   const [showAddOpportunity, setShowAddOpportunity] = useState(false);
+  const [editOpportunity, setEditOpportunity] = useState<Opportunity | null>(null);
   const [showLogActivity, setShowLogActivity] = useState(false);
+  const [editActivity, setEditActivity] = useState<Activity | null>(null);
   const [showEdit, setShowEdit] = useState(false);
+  const [showWhatsApp, setShowWhatsApp] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -662,6 +1142,21 @@ const CRMInstitution = () => {
     load();
   }, [id]);
 
+  const deleteContact = async (contactId: string) => {
+    await supabase.from('crm_contacts').delete().eq('id', contactId);
+    setContacts(p => p.filter(c => c.id !== contactId));
+  };
+
+  const deleteOpportunity = async (oppId: string) => {
+    await supabase.from('crm_opportunities').delete().eq('id', oppId);
+    setOpportunities(p => p.filter(o => o.id !== oppId));
+  };
+
+  const deleteActivity = async (actId: string) => {
+    await supabase.from('crm_activities').delete().eq('id', actId);
+    setActivities(p => p.filter(a => a.id !== actId));
+  };
+
   if (loading) return (
     <div style={{ padding: '40px', textAlign: 'center', color: C.textSub, fontSize: 13 }}>טוען...</div>
   );
@@ -680,9 +1175,14 @@ const CRMInstitution = () => {
 
       {/* Modals */}
       {showAddContact && id && <AddContactModal institutionId={id} onClose={() => setShowAddContact(false)} onSaved={c => { setContacts(p => [c, ...p]); setShowAddContact(false); }} />}
+      {editContact && <EditContactModal contact={editContact} onClose={() => setEditContact(null)} onSaved={c => { setContacts(p => p.map(x => x.id === c.id ? c : x)); setEditContact(null); }} />}
       {showAddOpportunity && id && <AddOpportunityModal institutionId={id} contacts={contacts} onClose={() => setShowAddOpportunity(false)} onSaved={o => { setOpportunities(p => [o, ...p]); setShowAddOpportunity(false); }} />}
+      {editOpportunity && <EditOpportunityModal opportunity={editOpportunity} contacts={contacts} onClose={() => setEditOpportunity(null)} onSaved={o => { setOpportunities(p => p.map(x => x.id === o.id ? o : x)); setEditOpportunity(null); }} />}
       {showLogActivity && id && <LogActivityModal institutionId={id} contacts={contacts} opportunities={opportunities} onClose={() => setShowLogActivity(false)} onSaved={a => { setActivities(p => [a, ...p]); setShowLogActivity(false); }} />}
+      {editActivity && <EditActivityModal activity={editActivity} contacts={contacts} opportunities={opportunities} onClose={() => setEditActivity(null)} onSaved={a => { setActivities(p => p.map(x => x.id === a.id ? a : x)); setEditActivity(null); }} />}
       {showEdit && <EditInstitutionModal institution={institution} onClose={() => setShowEdit(false)} onSaved={patch => { setInstitution(p => p ? { ...p, ...patch } : p); setShowEdit(false); }} />}
+      {showWhatsApp && id && <SendWhatsAppModal contacts={contacts} institutionName={institution.name} institutionId={id} onClose={() => setShowWhatsApp(false)} onSent={a => { setActivities(p => [a, ...p]); setShowWhatsApp(false); }} />}
+      {showEmail && id && <SendEmailModal contacts={contacts} institutionName={institution.name} institutionId={id} onClose={() => setShowEmail(false)} onSent={a => { setActivities(p => [a, ...p]); setShowEmail(false); }} />}
 
       {/* Header card */}
       <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: '14px 24px 0', flexShrink: 0 }}>
@@ -714,8 +1214,8 @@ const CRMInstitution = () => {
           </div>
           {/* Quick actions */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {primaryContact?.phone && <Btn variant="teal" sm>📱 וואטסאפ</Btn>}
-            {primaryContact?.email && <Btn variant="ghost" sm>📧 מייל</Btn>}
+            {contacts.length > 0 && <Btn variant="teal" sm onClick={() => setShowWhatsApp(true)}>📱 וואטסאפ</Btn>}
+            {contacts.length > 0 && <Btn variant="ghost" sm onClick={() => setShowEmail(true)}>📧 מייל</Btn>}
             <Btn variant="secondary" sm onClick={() => setShowLogActivity(true)}>📝 תעד שיחה</Btn>
             <Btn sm onClick={() => setShowAddOpportunity(true)}>+ הזדמנות</Btn>
             <Btn variant="secondary" sm onClick={() => setShowAddContact(true)}>+ קשר</Btn>
@@ -732,7 +1232,7 @@ const CRMInstitution = () => {
           <KpiCard label="AI Score"          value={institution.crm_ai_score ?? '—'}  color={C.ai}    bg={C.aiBg} />
         </div>
 
-        {/* Shadcn Tabs trigger row — overridden to match mockup style */}
+        {/* Tabs */}
         <Tabs defaultValue="overview" className="w-full">
           <TabsList className="bg-transparent p-0 h-auto rounded-none border-b border-transparent w-full justify-start gap-0">
             {([
@@ -757,19 +1257,19 @@ const CRMInstitution = () => {
               <TabOverview institution={institution} activities={activities} contacts={contacts} onNotesSaved={n => setInstitution(p => p ? { ...p, crm_notes: n || null } : p)} />
             </TabsContent>
             <TabsContent value="contacts">
-              <TabContacts contacts={contacts} onAdd={() => setShowAddContact(true)} />
+              <TabContacts contacts={contacts} onAdd={() => setShowAddContact(true)} onEdit={setEditContact} onDelete={deleteContact} />
             </TabsContent>
             <TabsContent value="opportunities">
-              <TabOpportunities opportunities={opportunities} contacts={contacts} onAdd={() => setShowAddOpportunity(true)} />
+              <TabOpportunities opportunities={opportunities} contacts={contacts} onAdd={() => setShowAddOpportunity(true)} onEdit={setEditOpportunity} onDelete={deleteOpportunity} />
             </TabsContent>
             <TabsContent value="activity">
-              <TabActivity activities={activities} contacts={contacts} opportunities={opportunities} onLog={() => setShowLogActivity(true)} />
+              <TabActivity activities={activities} contacts={contacts} opportunities={opportunities} onLog={() => setShowLogActivity(true)} onEdit={setEditActivity} onDelete={deleteActivity} />
             </TabsContent>
             <TabsContent value="communication">
-              <div style={{ padding: '40px', textAlign: 'center', color: C.textSub, fontSize: 13 }}>תקשורת — בקרוב</div>
+              <TabCommunication activities={activities} contacts={contacts} onWhatsApp={() => setShowWhatsApp(true)} onEmail={() => setShowEmail(true)} />
             </TabsContent>
             <TabsContent value="files">
-              <div style={{ padding: '40px', textAlign: 'center', color: C.textSub, fontSize: 13 }}>קבצים — בקרוב</div>
+              {id && <TabFiles institutionId={id} />}
             </TabsContent>
             <TabsContent value="ai">
               <TabAI institution={institution} opportunities={opportunities} activities={activities} />

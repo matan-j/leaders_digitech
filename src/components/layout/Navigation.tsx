@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,86 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import Profile from '@/pages/Profile';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+
+interface CRMNotification {
+  id: string; title: string; body: string | null;
+  is_read: boolean; created_at: string;
+}
+
+const formatAgo = (iso: string) => {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (diff < 1) return 'עכשיו';
+  if (diff < 60) return `לפני ${diff} דק׳`;
+  const h = Math.floor(diff / 60);
+  if (h < 24) return `לפני ${h} שע׳`;
+  return `לפני ${Math.floor(h / 24)} ימים`;
+};
+
+const NotificationBell = ({ userId }: { userId: string }) => {
+  const [open, setOpen] = useState(false);
+  const [notifs, setNotifs] = useState<CRMNotification[]>([]);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const load = async () => {
+    const { data } = await supabase
+      .from('crm_notifications')
+      .select('id, title, body, is_read, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    if (data) setNotifs(data as CRMNotification[]);
+  };
+
+  useEffect(() => { load(); }, [userId]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const markRead = async (id: string) => {
+    await supabase.from('crm_notifications').update({ is_read: true }).eq('id', id);
+    setNotifs(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+  };
+
+  const unread = notifs.filter(n => !n.is_read).length;
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => { setOpen(p => !p); load(); }}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, position: 'relative', padding: '4px 6px', color: 'white' }}
+        title="התראות"
+      >
+        🔔
+        {unread > 0 && (
+          <span style={{ position: 'absolute', top: 0, right: 0, background: '#DC2626', color: '#fff', borderRadius: '50%', fontSize: 9, fontWeight: 700, width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {unread > 9 ? '9+' : unread}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 500, background: '#fff', border: '1px solid #E4E7ED', borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.14)', width: 300, maxHeight: 380, overflowY: 'auto', direction: 'rtl' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #E4E7ED', fontWeight: 700, fontSize: 13, color: '#111827' }}>התראות</div>
+          {notifs.length === 0 && <div style={{ padding: '20px 16px', fontSize: 13, color: '#6B7280', textAlign: 'center' }}>אין התראות</div>}
+          {notifs.map(n => (
+            <div key={n.id} style={{ padding: '11px 16px', borderBottom: '1px solid #F0F2F5', background: n.is_read ? '#fff' : '#EEF2FF' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2, color: '#111827' }}>{n.title}</div>
+              {n.body && <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>{n.body}</div>}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: '#9CA3AF' }}>{formatAgo(n.created_at)}</span>
+                {!n.is_read && <button onClick={() => markRead(n.id)} style={{ fontSize: 11, color: '#3B5BDB', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>סמן כנקרא</button>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const Navigation = () => {
   const { user, signOut } = useAuth();
@@ -119,8 +199,8 @@ const navigationItems = [
             </div>
             
             {/* Hamburger Menu & User Info */}
-            <div className="flex items-center ">
-            
+            <div className="flex items-center gap-2">
+              {user && <NotificationBell userId={user.id} />}
               <Button
                 variant="outline"
                 size="sm"
@@ -145,7 +225,9 @@ const navigationItems = [
               <BookOpen className="h-6 w-6 text-blue-200 ml-2" />
               <h1 className="text-xl font-bold text-white">שלום  {profile?.full_name}</h1>
             </div>
-            <Sheet open={isOpen} onOpenChange={setIsOpen}>
+            <div className="flex items-center gap-1">
+              {user && <NotificationBell userId={user.id} />}
+              <Sheet open={isOpen} onOpenChange={setIsOpen}>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="sm" className="text-white hover:bg-white/10">
                   <Menu className="h-6 w-6" />
@@ -197,6 +279,7 @@ const navigationItems = [
                 </div>
               </SheetContent>
             </Sheet>
+            </div>
           </div>
         </div>
       </header>

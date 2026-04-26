@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 const C = {
   surface: '#FFFFFF',
@@ -46,6 +47,7 @@ const AssignInstructorModal = ({
   onClose,
   onAssigned,
 }: Props) => {
+  const { user } = useAuth();
   const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -76,7 +78,28 @@ const AssignInstructorModal = ({
     setSaving(false);
     if (!error) {
       const instr = instructors.find((i) => i.id === selected);
-      onAssigned(selected, instr?.full_name ?? '');
+      const instrName = instr?.full_name ?? '';
+
+      if (user?.id) {
+        const activity = {
+          institution_id: institutionId,
+          user_id: user.id,
+          type: 'אחר',
+          summary: `מדריך מוכר שויך: ${instrName}. פרטי הליד נשלחו.`,
+          status: 'Completed',
+          occurred_at: new Date().toISOString(),
+        };
+        await supabase.from('crm_activities').insert([activity]);
+
+        await supabase.from('crm_notifications').insert([{
+          user_id: selected,
+          institution_id: institutionId,
+          title: 'ליד חדש שויך אליך',
+          body: `שויכת כמדריך מוכר ל${institutionName}. עיר: ${institutionCity ?? '—'}. לחץ לפרטים נוספים.`,
+        }]);
+      }
+
+      onAssigned(selected, instrName);
     }
   };
 

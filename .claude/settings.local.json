@@ -27,7 +27,11 @@
       "Bash(git checkout *)",
       "Bash(git add *)",
       "Bash(npm list *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(npx supabase *)",
+      "Read(//c/Users/alonp/AppData/Local/**)",
+      "Read(//c/Users/alonp/scoop/**)",
+      "Bash(command -v supabase.exe)"
     ]
   }
 }

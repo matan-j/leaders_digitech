@@ -22,6 +22,30 @@ interface Template {
   body: string;
 }
 
+interface CRMList {
+  id: string;
+  name: string;
+  description: string | null;
+  member_count: number;
+}
+
+interface SendResult {
+  success?: boolean;
+  total?: number;
+  sent?: number;
+  failed?: number;
+  skipped?: number;
+  error?: string;
+}
+
+interface RecipientPreview {
+  institution_id: string;
+  institution_name: string;
+  contact_name: string | null;
+  phone: string | null;
+  email: string | null;
+}
+
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
 const C = {
@@ -34,6 +58,7 @@ const C = {
   teal: '#0891B2', tealBg: '#CFFAFE',
   purple: '#7C3AED', purpleBg: '#EDE9FE',
   gray: '#6B7280', grayBg: '#F3F4F6',
+  ai: '#0EA5E9', aiBg: '#E0F2FE',
 };
 
 // ─── Stage badge ──────────────────────────────────────────────────────────────
@@ -95,9 +120,16 @@ export default function CRMBroadcast() {
   const [selTpl, setSelTpl] = useState<Template | null>(null);
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState<SendResult | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [audiences, setAudiences] = useState<AudienceList[]>([]);
   const [loadingCounts, setLoadingCounts] = useState(true);
+  const [availableLists, setAvailableLists] = useState<CRMList[]>([]);
+  const [loadingLists, setLoadingLists] = useState(false);
+  const [manualListId, setManualListId] = useState<string | null>(null);
+  const [recipientPreview, setRecipientPreview] = useState<RecipientPreview[]>([]);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [previewExpanded, setPreviewExpanded] = useState(true);
 
   // Build audience lists with live counts from Supabase
   useEffect(() => {
@@ -138,27 +170,170 @@ export default function CRMBroadcast() {
     loadTemplates();
   }, [channel]);
 
+  // Load manual lists when manual audience is selected
+  useEffect(() => {
+    if (selList?.id !== 'manual') return;
+    async function loadLists() {
+      setLoadingLists(true);
+      const { data: lists } = await supabase
+        .from('crm_lists')
+        .select('id, name, description')
+        .order('name');
+      if (!lists) { setAvailableLists([]); setLoadingLists(false); return; }
+
+      const { data: counts } = await supabase
+        .from('crm_list_members')
+        .select('list_id');
+      const countMap = new Map<string, number>();
+      for (const c of counts ?? []) {
+        countMap.set(c.list_id, (countMap.get(c.list_id) ?? 0) + 1);
+      }
+      setAvailableLists(lists.map(l => ({ ...l, member_count: countMap.get(l.id) ?? 0 })));
+      setLoadingLists(false);
+    }
+    loadLists();
+  }, [selList?.id]);
+
+  // Fetch recipient preview whenever step 2 is entered
+  useEffect(() => {
+    if (step !== 2 || sent) return;
+    setLoadingPreview(true);
+    setRecipientPreview([]);
+
+    const MAX = 51; // fetch one extra to detect overflow
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    async function run() {
+      try {
+        let institutions: { id: string; name: string }[] = [];
+
+        if (selList?.id === 'manual') {
+          if (!manualListId) { setLoadingPreview(false); return; }
+          const { data: members } = await supabase
+            .from('crm_list_members')
+            .select('institution_id')
+            .eq('list_id', manualListId)
+            .limit(MAX);
+          const ids = (members ?? []).map((m: { institution_id: string }) => m.institution_id);
+          if (ids.length === 0) { setRecipientPreview([]); setLoadingPreview(false); return; }
+          const { data } = await supabase.from('educational_institutions').select('id, name').in('id', ids);
+          institutions = data ?? [];
+        } else {
+          let q = supabase.from('educational_institutions').select('id, name').limit(MAX);
+          if (selList?.id === 'new_leads')
+            q = q.eq('crm_class', 'Lead').gte('created_at', monthStart);
+          else if (selList?.id === 'no_reply')
+            q = q.eq('crm_stage', 'מעוניין').or(`crm_last_contact_at.is.null,crm_last_contact_at.lt.${sevenDaysAgo}`);
+          else if (selList?.id === 'renewal')
+            q = q.eq('crm_class', 'Customer');
+          else if (selList?.id === 'all_active')
+            q = q.in('crm_class', ['Lead', 'Customer']);
+          const { data } = await q;
+          institutions = data ?? [];
+        }
+
+        if (institutions.length === 0) { setRecipientPreview([]); setLoadingPreview(false); return; }
+
+        // Batch-fetch contacts for all institution IDs
+        const instIds = institutions.map(i => i.id);
+        const { data: contacts } = await supabase
+          .from('crm_contacts')
+          .select('id, name, phone, email, institution_id, is_primary')
+          .in('institution_id', instIds);
+
+        // Build contact map: prefer is_primary, fall back to any contact
+        const contactMap = new Map<string, { name: string; phone: string | null; email: string | null }>();
+        for (const c of contacts ?? []) {
+          if (c.is_primary && !contactMap.has(c.institution_id))
+            contactMap.set(c.institution_id, { name: c.name, phone: c.phone ?? null, email: c.email ?? null });
+        }
+        for (const c of contacts ?? []) {
+          if (!contactMap.has(c.institution_id))
+            contactMap.set(c.institution_id, { name: c.name, phone: c.phone ?? null, email: c.email ?? null });
+        }
+
+        setRecipientPreview(institutions.map(inst => ({
+          institution_id: inst.id,
+          institution_name: inst.name,
+          contact_name: contactMap.get(inst.id)?.name ?? null,
+          phone: contactMap.get(inst.id)?.phone ?? null,
+          email: contactMap.get(inst.id)?.email ?? null,
+        })));
+      } catch (err) {
+        console.error('[CRMBroadcast] preview fetch error:', err);
+      } finally {
+        setLoadingPreview(false);
+      }
+    }
+    run();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, sent]);
+
   const doSend = async () => {
     if (!selList || !selTpl) return;
+    if (selList.id === 'manual' && !manualListId) return;
     setSending(true);
-    await supabase.from('crm_broadcasts').insert([{
-      name: `${selList.name} — ${selTpl.name}`,
-      channel,
-      template_id: selTpl.id,
-      audience_type: selList.id,
-      audience_filter: selList.filter,
-      recipient_count: selList.count ?? 0,
-      status: 'sent',
-      sent_at: new Date().toISOString(),
-      created_by: user?.id ?? null,
-    }]);
+    setSendResult(null);
+
+    const audienceFilter = selList.id === 'manual'
+      ? { list_id: manualListId }
+      : selList.filter;
+    const recipientCount = selList.id === 'manual'
+      ? (availableLists.find(l => l.id === manualListId)?.member_count ?? 0)
+      : (selList.count ?? 0);
+
+    // 1. Insert broadcast record
+    const { data: broadcast, error: broadcastErr } = await supabase
+      .from('crm_broadcasts')
+      .insert([{
+        name: `${selList.name} — ${selTpl.name}`,
+        channel,
+        template_id: selTpl.id,
+        audience_type: selList.id,
+        audience_filter: audienceFilter,
+        recipient_count: recipientCount,
+        status: 'draft',
+        created_by: user?.id ?? null,
+      }])
+      .select('id')
+      .single();
+
+    if (broadcastErr || !broadcast) {
+      setSendResult({ error: broadcastErr?.message ?? 'שגיאה ביצירת השידור' });
+      setSending(false);
+      return;
+    }
+
+    // 2. Invoke edge function
+    const { data: result, error: fnErr } = await supabase.functions.invoke('crm-broadcast-send', {
+      body: { broadcast_id: broadcast.id, user_id: user?.id ?? null },
+    });
+
+    if (fnErr) {
+      setSendResult({ error: fnErr.message });
+      setSending(false);
+      setSent(true);
+      return;
+    }
+
+    setSendResult(result as SendResult);
     setSending(false);
     setSent(true);
+
+    // Auto-reset after 3 seconds
+    setTimeout(reset, 3000);
   };
 
   const reset = () => {
     setStep(0); setSelList(null); setSelTpl(null); setSent(false); setSending(false);
+    setRecipientPreview([]); setPreviewExpanded(true); setSendResult(null);
   };
+
+  // Derived count for step 1 "Next" button label
+  const audienceCount = selList?.id === 'manual'
+    ? (availableLists.find(l => l.id === manualListId)?.member_count ?? null)
+    : (selList?.count ?? null);
 
   return (
     <div dir="rtl" style={{ padding: '20px 24px', overflowY: 'auto', minHeight: '100%' }}>
@@ -214,10 +389,51 @@ export default function CRMBroadcast() {
               </div>
             ))}
           </div>
+          {/* Manual list picker */}
+          {selList?.id === 'manual' && (
+            <div style={{ marginBottom: 14 }}>
+              {loadingLists ? (
+                <div style={{ fontSize: 12, color: C.textDim, padding: '8px 0' }}>טוען רשימות...</div>
+              ) : availableLists.length === 0 ? (
+                <div style={{ padding: '14px 16px', background: C.bg, border: `1px dashed ${C.border}`, borderRadius: 8, fontSize: 12, color: C.textSub }}>
+                  אין רשימות ידניות עדיין. ניתן ליצור רשימה מתוך דף המוסדות.
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: C.textSub, marginBottom: 8 }}>בחר רשימה:</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+                    {availableLists.map(l => (
+                      <div
+                        key={l.id}
+                        onClick={() => setManualListId(l.id)}
+                        style={{
+                          background: C.surface,
+                          border: `2px solid ${manualListId === l.id ? C.accent : C.border}`,
+                          borderRadius: 8, padding: '10px 12px', cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 3 }}>{l.name}</div>
+                        {l.description && (
+                          <div style={{ fontSize: 11, color: C.textSub, marginBottom: 4 }}>{l.description}</div>
+                        )}
+                        <div style={{ fontSize: 11, color: C.accent, fontWeight: 700 }}>
+                          {l.member_count} נמענים
+                        </div>
+                        {manualListId === l.id && (
+                          <div style={{ fontSize: 11, color: C.accent, fontWeight: 700, marginTop: 3 }}>✓ נבחר</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           <button
-            disabled={!selList}
+            disabled={!selList || (selList.id === 'manual' && !manualListId)}
             onClick={() => setStep(1)}
-            style={{ padding: '7px 18px', borderRadius: 6, border: 'none', background: selList ? C.accent : C.border, color: '#fff', fontSize: 13, fontWeight: 600, cursor: selList ? 'pointer' : 'not-allowed', opacity: selList ? 1 : 0.5 }}
+            style={{ padding: '7px 18px', borderRadius: 6, border: 'none', background: (selList && (selList.id !== 'manual' || manualListId)) ? C.accent : C.border, color: '#fff', fontSize: 13, fontWeight: 600, cursor: (selList && (selList.id !== 'manual' || manualListId)) ? 'pointer' : 'not-allowed', opacity: (selList && (selList.id !== 'manual' || manualListId)) ? 1 : 0.5 }}
           >
             הבא — בחר הודעה →
           </button>
@@ -263,7 +479,7 @@ export default function CRMBroadcast() {
               onClick={() => setStep(2)}
               style={{ padding: '7px 18px', borderRadius: 6, border: 'none', background: selTpl ? C.accent : C.border, color: '#fff', fontSize: 13, fontWeight: 600, cursor: selTpl ? 'pointer' : 'not-allowed', opacity: selTpl ? 1 : 0.5 }}
             >
-              הבא — אישור →
+              {`הבא — אישור ושליחה${audienceCount !== null ? ` (${audienceCount})` : ''} →`}
             </button>
           </div>
         </div>
@@ -297,8 +513,81 @@ export default function CRMBroadcast() {
               </div>
 
               {/* Message preview */}
-              <div style={{ padding: '12px 14px', borderRadius: 9, background: channel === 'whatsapp' ? '#E9FBD8' : C.accentBg, marginBottom: 16, fontSize: 12, lineHeight: 1.7, color: C.text, whiteSpace: 'pre-wrap' }}>
+              <div style={{ padding: '12px 14px', borderRadius: 9, background: channel === 'whatsapp' ? '#E9FBD8' : C.accentBg, marginBottom: 14, fontSize: 12, lineHeight: 1.7, color: C.text, whiteSpace: 'pre-wrap' }}>
                 {selTpl?.body.replace(/\[שם\]/g, '[שם הנמען]')}
+              </div>
+
+              {/* Recipient preview table */}
+              <div style={{ marginBottom: 16 }}>
+                {/* Collapsible header */}
+                <div
+                  onClick={() => setPreviewExpanded(prev => !prev)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', padding: '6px 0', userSelect: 'none' }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>
+                    נמענים ({loadingPreview ? '...' : Math.min(recipientPreview.length, 50)}{recipientPreview.length > 50 ? '+' : ''})
+                  </span>
+                  <span style={{
+                    fontSize: 10, color: C.textSub,
+                    display: 'inline-block',
+                    transform: previewExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.15s',
+                  }}>▼</span>
+                </div>
+
+                {previewExpanded && (
+                  <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                    {loadingPreview ? (
+                      <div style={{ padding: '20px', textAlign: 'center', fontSize: 12, color: C.textDim }}>
+                        ⟳ טוען נמענים...
+                      </div>
+                    ) : recipientPreview.length === 0 ? (
+                      <div style={{ padding: '20px', textAlign: 'center', fontSize: 12, color: C.textDim }}>
+                        לא נמצאו נמענים
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                          <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                            <thead>
+                              <tr style={{ background: C.bg, borderBottom: `1px solid ${C.border}`, position: 'sticky', top: 0 }}>
+                                <th style={{ textAlign: 'right', padding: '7px 12px', fontWeight: 600, color: C.textSub, whiteSpace: 'nowrap' }}>מוסד</th>
+                                <th style={{ textAlign: 'right', padding: '7px 12px', fontWeight: 600, color: C.textSub, whiteSpace: 'nowrap' }}>איש קשר</th>
+                                <th style={{ textAlign: 'right', padding: '7px 12px', fontWeight: 600, color: C.textSub, whiteSpace: 'nowrap' }}>
+                                  {channel === 'whatsapp' ? 'טלפון' : 'מייל'}
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {recipientPreview.slice(0, 50).map((row, i) => (
+                                <tr
+                                  key={row.institution_id}
+                                  style={{
+                                    borderBottom: i < Math.min(recipientPreview.length, 50) - 1 ? `1px solid ${C.borderLight}` : 'none',
+                                    background: i % 2 === 0 ? C.surface : C.bg,
+                                  }}
+                                >
+                                  <td style={{ padding: '6px 12px', fontWeight: 500 }}>{row.institution_name}</td>
+                                  <td style={{ padding: '6px 12px', color: row.contact_name ? C.text : C.textDim }}>
+                                    {row.contact_name ?? 'אין איש קשר'}
+                                  </td>
+                                  <td style={{ padding: '6px 12px', color: C.textSub }}>
+                                    {(channel === 'whatsapp' ? row.phone : row.email) ?? '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {recipientPreview.length > 50 && (
+                          <div style={{ padding: '7px 12px', fontSize: 11, color: C.textDim, textAlign: 'center', borderTop: `1px solid ${C.borderLight}`, background: C.bg }}>
+                            ועוד {recipientPreview.length - 50} נמענים נוספים...
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: 8 }}>
@@ -316,23 +605,36 @@ export default function CRMBroadcast() {
             </>
           ) : (
             <div style={{ textAlign: 'center', padding: '32px 0' }}>
-              <div style={{ fontSize: 44, marginBottom: 14 }}>✅</div>
-              <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>נשלח בהצלחה!</div>
-              <div style={{ fontSize: 13, color: C.textSub, marginBottom: 24 }}>
-                {selList?.count} הודעות נשלחו לרשימה "{selList?.name}"
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 22, maxWidth: 320, margin: '0 auto 22px' }}>
-                {([
-                  ['נשלחו', selList?.count ?? 0, C.success],
-                  ['נפתחו', '—', C.accent],
-                  ['שגיאות', '0', C.gray],
-                ] as const).map(([l, v, c], i) => (
-                  <div key={i} style={{ padding: '10px', borderRadius: 8, background: C.bg, border: `1px solid ${C.border}` }}>
-                    <div style={{ fontSize: 11, color: C.textSub }}>{l}</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: c }}>{v}</div>
+              {sendResult?.error ? (
+                <>
+                  <div style={{ fontSize: 44, marginBottom: 14 }}>❌</div>
+                  <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6, color: C.danger }}>שגיאה בשליחה</div>
+                  <div style={{ fontSize: 12, color: C.textSub, marginBottom: 24, padding: '8px 14px', background: C.dangerBg, borderRadius: 8 }}>
+                    {sendResult.error}
                   </div>
-                ))}
-              </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 44, marginBottom: 14 }}>✅</div>
+                  <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>נשלח בהצלחה!</div>
+                  <div style={{ fontSize: 13, color: C.textSub, marginBottom: 20 }}>
+                    הושלמה שליחה לרשימה "{selList?.name}"
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 22, maxWidth: 320, margin: '0 auto 22px' }}>
+                    {([
+                      ['נשלחו', sendResult?.sent ?? 0, C.success],
+                      ['דולגו', sendResult?.skipped ?? 0, C.warning],
+                      ['נכשלו', sendResult?.failed ?? 0, C.danger],
+                    ] as const).map(([l, v, c], i) => (
+                      <div key={i} style={{ padding: '10px', borderRadius: 8, background: C.bg, border: `1px solid ${C.border}` }}>
+                        <div style={{ fontSize: 11, color: C.textSub }}>{l}</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: c }}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              <div style={{ fontSize: 11, color: C.textDim, marginBottom: 12 }}>מתאפס אוטומטית תוך שניות...</div>
               <button onClick={reset} style={{ padding: '7px 22px', borderRadius: 6, border: 'none', background: C.accent, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                 שליחה חדשה
               </button>

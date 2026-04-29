@@ -80,6 +80,13 @@ interface InstitutionReport {
   courses: CourseDetail[];
 }
 
+interface SalaryRow {
+  instructor_id: string;
+  full_name: string;
+  lesson_count: number;
+  total_pay: number;
+}
+
 interface CourseDetail {
   id: string;
   course_name: string;
@@ -96,7 +103,7 @@ const Reports = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [reportType, setReportType] = useState<'instructors' | 'institutions'>('instructors');
+  const [reportType, setReportType] = useState<'instructors' | 'institutions' | 'salary'>('instructors');
   const [monthlyReports, setMonthlyReports] = useState<Map<string, MonthlyReport>>(new Map());
   const [selectedMonth, setSelectedMonth] = useState<string>('current');
   const [selectedInstructor, setSelectedInstructor] = useState<string>('all');
@@ -109,6 +116,8 @@ const Reports = () => {
   const [totalSystemStudents, setTotalSystemStudents] = useState(0);
   // Cache for schedules data
   const [schedulesCache, setSchedulesCache] = useState<any>(null);
+  const [salaryData, setSalaryData] = useState<SalaryRow[]>([]);
+  const [salaryLoading, setSalaryLoading] = useState(false);
 
   // Helper function to calculate hours between two timestamps
   const calculateLessonHours = (scheduledStart: string, scheduledEnd: string): number => {
@@ -406,6 +415,78 @@ const Reports = () => {
       loadMonthOnDemand(monthKey);
     }
   }, [monthlyReports, loadMonthOnDemand]);
+
+  const selectedMonthDates = useMemo(() => {
+    const m = monthsList.find(m => m.key === selectedMonth);
+    return m
+      ? { start: m.startDate, end: m.endDate }
+      : { start: startOfMonth(new Date()), end: endOfMonth(new Date()) };
+  }, [selectedMonth, monthsList]);
+
+  const fetchSalaryData = useCallback(async (startDate: Date, endDate: Date) => {
+    setSalaryLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('lesson_reports')
+        .select('id, instructor_id, instructor:instructor_id(id, full_name)')
+        .eq('is_completed', true)
+        .gte('created_at', startDate.toISOString())
+        .lte('created_at', endDate.toISOString());
+
+      if (error) throw error;
+
+      const map = new Map<string, SalaryRow>();
+      for (const r of data || []) {
+        if (!r.instructor_id) continue;
+        const instructor = r.instructor as { id: string; full_name: string } | null;
+        if (!instructor) continue;
+        if (!map.has(r.instructor_id)) {
+          map.set(r.instructor_id, {
+            instructor_id: r.instructor_id,
+            full_name: instructor.full_name,
+            lesson_count: 0,
+            total_pay: 0,
+          });
+        }
+        const row = map.get(r.instructor_id)!;
+        row.lesson_count += 1;
+        row.total_pay += 100;
+      }
+      setSalaryData(
+        Array.from(map.values()).sort((a, b) => a.full_name.localeCompare(b.full_name, 'he'))
+      );
+    } catch (err) {
+      console.error('Error fetching salary data:', err);
+      setSalaryData([]);
+    } finally {
+      setSalaryLoading(false);
+    }
+  }, []);
+
+  const exportSalaryCsv = useCallback(() => {
+    const label = monthsList.find(m => m.key === selectedMonth)?.label ?? '';
+    const totalLessons = salaryData.reduce((s, r) => s + r.lesson_count, 0);
+    const totalPay = salaryData.reduce((s, r) => s + r.total_pay, 0);
+    const rows = [
+      ['מדריך', 'שיעורים שדווחו', 'סה"כ לתשלום'],
+      ...salaryData.map(r => [r.full_name, String(r.lesson_count), String(r.total_pay)]),
+      ['סה"כ', String(totalLessons), String(totalPay)],
+    ];
+    const csv = rows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `salary-${label}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [salaryData, selectedMonth, monthsList]);
+
+  useEffect(() => {
+    if (reportType === 'salary') {
+      fetchSalaryData(selectedMonthDates.start, selectedMonthDates.end);
+    }
+  }, [reportType, selectedMonthDates, fetchSalaryData]);
 
   // Optimized fetchMonthData with better queries
   const fetchMonthData = async (startDate: Date, endDate: Date, monthKey: string) => {
@@ -1002,7 +1083,11 @@ const Reports = () => {
                 <Calendar className="h-4 w-4" />
                 <span>יומן</span>
               </Button>
-              <Button className="flex items-center space-x-2">
+              <Button
+                className="flex items-center space-x-2"
+                onClick={reportType === 'salary' ? exportSalaryCsv : undefined}
+                disabled={reportType === 'salary' && salaryData.length === 0}
+              >
                 <Download className="h-4 w-4" />
                 <span>ייצוא דוח</span>
               </Button>
@@ -1025,13 +1110,14 @@ const Reports = () => {
             <CardDescription>בחר בין דוח מדריכים או דוח מוסדות חינוך</CardDescription>
           </CardHeader>
           <CardContent>
-            <Select value={reportType} onValueChange={(value: 'instructors' | 'institutions') => setReportType(value)}>
+            <Select value={reportType} onValueChange={(value: 'instructors' | 'institutions' | 'salary') => setReportType(value)}>
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="instructors">דוח מדריכים</SelectItem>
                 <SelectItem value="institutions">דוח מוסדות חינוך</SelectItem>
+                <SelectItem value="salary">דוח שכר מדריכים</SelectItem>
               </SelectContent>
             </Select>
           </CardContent>
@@ -1560,6 +1646,53 @@ const Reports = () => {
                   ))
                 )}
               </div>
+            ) : reportType === 'salary' ? (
+              salaryLoading ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p className="text-gray-600">טוען נתוני שכר...</p>
+                </div>
+              ) : salaryData.length === 0 ? (
+                <Card>
+                  <CardContent className="text-center py-12">
+                    <Users className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">אין נתוני שכר</h3>
+                    <p className="text-gray-600">לא נמצאו שיעורים מדווחים לחודש זה</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm" dir="rtl">
+                    <thead>
+                      <tr className="border-b bg-gray-50 text-right">
+                        <th className="py-3 px-4 font-medium text-gray-900">מדריך</th>
+                        <th className="py-3 px-4 font-medium text-gray-900">שיעורים שדווחו</th>
+                        <th className="py-3 px-4 font-medium text-gray-900">סה״כ לתשלום</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {salaryData.map(row => (
+                        <tr key={row.instructor_id} className="hover:bg-gray-50">
+                          <td className="py-3 px-4 font-medium">{row.full_name}</td>
+                          <td className="py-3 px-4 text-blue-600 font-bold">{row.lesson_count}</td>
+                          <td className="py-3 px-4 text-green-600 font-bold">₪{row.total_pay.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-300 bg-gray-50">
+                        <td className="py-3 px-4 font-bold text-gray-900">סה״כ</td>
+                        <td className="py-3 px-4 font-bold text-blue-700">
+                          {salaryData.reduce((s, r) => s + r.lesson_count, 0)}
+                        </td>
+                        <td className="py-3 px-4 font-bold text-green-700">
+                          ₪{salaryData.reduce((s, r) => s + r.total_pay, 0).toLocaleString()}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )
             ) : (
               <div className="space-y-6">
                 {filteredMonthData.detailData.length === 0 ? (

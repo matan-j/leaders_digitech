@@ -941,6 +941,15 @@ function replaceVars(text: string, vars: Record<string, string>) {
   return text.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
 }
 
+function replaceVariables(text: string, contact: Contact, institutionName: string, senderName: string) {
+  return text
+    .replace(/\[שם\]/g, contact.name || '')
+    .replace(/\[שם_מוסד\]/g, institutionName || '')
+    .replace(/\[שם_שולח\]/g, senderName || '')
+    .replace(/\[תאריך\]/g, new Date().toLocaleDateString('he-IL'))
+    .replace(/\[תוכנית\]/g, '')
+}
+
 // SendWhatsApp Modal
 interface MessageTemplate { id: string; name: string; channel: string; body: string; subject: string | null; variables: string[] | null }
 interface SendWhatsAppModalProps { contacts: Contact[]; institutionName: string; institutionId: string; onClose: () => void; onSent: (a: Activity) => void; }
@@ -951,10 +960,18 @@ const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, 
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [senderName, setSenderName] = useState('');
 
   useEffect(() => {
     supabase.from('crm_message_templates').select('id, name, channel, body, subject, variables').eq('channel', 'whatsapp').then(({ data }) => {
       if (data) setTemplates(data as MessageTemplate[]);
+    });
+  }, []);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) supabase.from('profiles').select('full_name').eq('id', user.id).single()
+        .then(({ data }) => { if (data) setSenderName(data.full_name ?? ''); });
     });
   }, []);
 
@@ -967,13 +984,16 @@ const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, 
     }
   }, [templateId, contactId, selectedTemplate, selectedContact, institutionName]);
 
-  const preview = selectedContact ? replaceVars(message, { שם: selectedContact.name, מוסד: institutionName }) : message;
+  const preview = selectedContact
+    ? replaceVariables(replaceVars(message, { שם: selectedContact.name, מוסד: institutionName }), selectedContact, institutionName, senderName)
+    : message;
 
   const send = async () => {
     if (!selectedContact?.phone || !message.trim()) return;
     setSending(true); setError('');
     try {
-      await callGHL('send_whatsapp', { phone: selectedContact.phone, message: preview, contactName: selectedContact.name });
+      const finalMessage = replaceVariables(message, selectedContact, institutionName, senderName);
+      await callGHL('send_whatsapp', { phone: selectedContact.phone, message: finalMessage, contactName: selectedContact.name });
       const { data: { user } } = await supabase.auth.getUser();
       const { data: act } = await supabase.from('crm_activities').insert([{
         institution_id: institutionId, type: 'וואטסאפ', user_id: user!.id,
@@ -1029,10 +1049,18 @@ const SendEmailModal = ({ contacts, institutionName, institutionId, onClose, onS
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [senderName, setSenderName] = useState('');
 
   useEffect(() => {
     supabase.from('crm_message_templates').select('id, name, channel, body, subject, variables').eq('channel', 'email').then(({ data }) => {
       if (data) setTemplates(data as MessageTemplate[]);
+    });
+  }, []);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) supabase.from('profiles').select('full_name').eq('id', user.id).single()
+        .then(({ data }) => { if (data) setSenderName(data.full_name ?? ''); });
     });
   }, []);
 
@@ -1053,7 +1081,9 @@ const SendEmailModal = ({ contacts, institutionName, institutionId, onClose, onS
     setSending(true); setError('');
     try {
       console.log('guard passed, calling callGHL...')
-      const result = await callGHL('send_email', { email: selectedContact.email, subject: subject || '(ללא נושא)', body, contactName: selectedContact.name });
+      const finalBody = replaceVariables(body, selectedContact, institutionName, senderName);
+      const finalSubject = replaceVariables(subject || '(ללא נושא)', selectedContact, institutionName, senderName);
+      const result = await callGHL('send_email', { email: selectedContact.email, subject: finalSubject, body: finalBody, contactName: selectedContact.name });
       console.log('callGHL result:', result)
       const { data: { user } } = await supabase.auth.getUser();
       const { data: act } = await supabase.from('crm_activities').insert([{

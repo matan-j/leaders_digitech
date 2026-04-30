@@ -32,20 +32,6 @@ const CLASSES = ['Lead', 'Customer', 'Past Customer'] as const;
 
 // ── badge helpers ─────────────────────────────────────────────
 
-const classBadge = (c: string) => {
-  const m: Record<string, [string, string]> = {
-    Lead:            [C.warning, C.warningBg],
-    Customer:        [C.success, C.successBg],
-    'Past Customer': [C.textSub, C.bg],
-  };
-  const [color, bg] = m[c] ?? [C.textSub, C.bg];
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: bg, color }}>
-      {c}
-    </span>
-  );
-};
-
 const stageBadge = (s: string) => {
   const m: Record<string, [string, string]> = {
     'יצירת קשר': [C.textSub, C.bg],
@@ -68,6 +54,17 @@ const Av = ({ name, size = 22, color = C.accent, bg = C.accentBg }: { name: stri
   </div>
 );
 
+// ── risk/status helpers ───────────────────────────────────────
+
+const RISK_OPTIONS: { value: string; label: string; dot: string }[] = [
+  { value: 'high',   label: 'לא שוחחנו', dot: '#DC2626' },
+  { value: 'medium', label: 'בתהליך',    dot: '#D97706' },
+  { value: 'low',    label: 'שוחחנו',    dot: '#16A34A' },
+];
+
+const getRiskOption = (risk: string | null) =>
+  RISK_OPTIONS.find((o) => o.value === risk) ?? RISK_OPTIONS[0];
+
 // ── types ────────────────────────────────────────────────────
 
 interface CRMContact {
@@ -89,9 +86,184 @@ interface InstitutionRow {
   crm_owner_id: string | null;
   crm_assigned_instructor_id: string | null;
   crm_potential: number | null;
+  crm_notes: string | null;
+  crm_risk: string | null;
   instructor: { id: string; full_name: string } | null;
   contacts: CRMContact[];
+  primaryPhone?: string | null;
 }
+
+// ── sort types ────────────────────────────────────────────────
+
+type SortKey = 'city' | 'name' | 'crm_stage' | 'crm_last_contact_at';
+type SortDir = 'asc' | 'desc';
+
+// ── Notes Popover ─────────────────────────────────────────────
+
+interface NotesPopoverProps {
+  institutionId: string;
+  notes: string | null;
+  onSaved: (id: string, notes: string) => void;
+}
+
+const NotesPopover = ({ institutionId, notes, onSaved }: NotesPopoverProps) => {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(notes ?? '');
+  const [saving, setSaving] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Reset draft only when opening the popover, not on every notes prop change.
+  // Having `notes` in deps would reset the user's in-progress edits whenever
+  // the parent re-renders with a new notes value (e.g. immediately after onSaved
+  // fires setRows while open is still true).
+  useEffect(() => {
+    if (!open) return;
+    setDraft(notes ?? '');
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await supabase
+      .from('educational_institutions')
+      .update({ crm_notes: draft || null })
+      .eq('id', institutionId);
+    setSaving(false);
+    onSaved(institutionId, draft);
+    setOpen(false);
+  };
+
+  const preview = notes ? notes.slice(0, 40) + (notes.length > 40 ? '...' : '') : null;
+
+  return (
+    <div
+      ref={ref}
+      onClick={(e) => e.stopPropagation()}
+      style={{ position: 'relative', minWidth: 120 }}
+    >
+      {/* Trigger — fills the full cell area */}
+      <div
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          cursor: 'pointer', fontSize: 12,
+          color: preview ? C.text : C.textDim,
+          padding: '4px 2px',
+          display: 'flex', alignItems: 'center', gap: 4,
+        }}
+      >
+        {preview ?? <span style={{ fontSize: 11 }}>+ הוסף הערה</span>}
+      </div>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', right: 0, zIndex: 200,
+          background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.13)', padding: 12, width: 260,
+        }}>
+          {/* Popover header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: C.textSub }}>הערות</span>
+            <button
+              onClick={() => setOpen(false)}
+              style={{ background: 'none', border: 'none', fontSize: 14, color: C.textDim, cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}
+            >
+              ✕
+            </button>
+          </div>
+
+          <textarea
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={4}
+            placeholder="הוסף הערות..."
+            style={{ width: '100%', fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 8px', resize: 'vertical', outline: 'none', boxSizing: 'border-box', color: C.text }}
+          />
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{ marginTop: 7, width: '100%', background: C.accent, color: '#fff', border: 'none', borderRadius: 5, padding: '5px 0', fontSize: 12, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}
+          >
+            {saving ? 'שומר...' : 'שמור'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Risk Dropdown ─────────────────────────────────────────────
+
+interface RiskDropdownProps {
+  institutionId: string;
+  risk: string | null;
+  onChanged: (id: string, risk: string) => void;
+}
+
+const RiskDropdown = ({ institutionId, risk, onChanged }: RiskDropdownProps) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = getRiskOption(risk);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handleSelect = async (value: string) => {
+    setOpen(false);
+    onChanged(institutionId, value);
+    await supabase
+      .from('educational_institutions')
+      .update({ crm_risk: value })
+      .eq('id', institutionId);
+  };
+
+  return (
+    <div style={{ position: 'relative' }} ref={ref} onClick={(e) => e.stopPropagation()}>
+      <div
+        onClick={() => setOpen((v) => !v)}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', userSelect: 'none' }}
+      >
+        <div style={{ width: 9, height: 9, borderRadius: '50%', background: current.dot, flexShrink: 0 }} />
+        <span style={{ fontSize: 11, color: C.textSub, fontWeight: 500 }}>{current.label}</span>
+      </div>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', right: 0, zIndex: 200,
+          background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.13)', overflow: 'hidden', minWidth: 120,
+        }}>
+          {RISK_OPTIONS.map((o) => (
+            <div
+              key={o.value}
+              onClick={() => handleSelect(o.value)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 7, padding: '7px 12px',
+                fontSize: 12, cursor: 'pointer', color: C.text,
+                background: o.value === risk ? C.bg : undefined,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = C.bg)}
+              onMouseLeave={(e) => (e.currentTarget.style.background = o.value === risk ? C.bg : '')}
+            >
+              <div style={{ width: 9, height: 9, borderRadius: '50%', background: o.dot }} />
+              {o.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ── CSV modal ────────────────────────────────────────────────
 
@@ -136,10 +308,9 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
       encoding: 'UTF-8',
       complete: (result) => {
         const rows: CsvRow[] = result.data.map((r) => {
-          // Normalize BOM-stripped header keys
           const norm: Record<string, string> = {};
           for (const [k, v] of Object.entries(r)) {
-            norm[k.replace(/^\uFEFF/, '').trim()] = (v ?? '').trim();
+            norm[k.replace(/^﻿/, '').trim()] = (v ?? '').trim();
           }
           const row: CsvRow = {
             'שם מוסד': norm['שם מוסד'] ?? '',
@@ -179,7 +350,7 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
   const downloadTemplate = () => {
     const header = TEMPLATE_FIELDS.join(',');
     const example = 'בית ספר לדוגמה,תל אביב,תיכון,ישראל ישראלי,מנהל,050-1234567,example@school.co.il';
-    const bom = '\uFEFF';
+    const bom = '﻿';
     const blob = new Blob([bom + header + '\n' + example], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -196,7 +367,6 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
     setImporting(true);
     setStep(2);
 
-    // Fetch instructors for city-matching
     const { data: instructors } = await supabase
       .from('profiles')
       .select('id, city')
@@ -216,7 +386,6 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
 
         if (instErr || !inst) { errors++; continue; }
 
-        // Auto-assign instructor by city
         if (instructors && row['עיר']) {
           const match = instructors.find(
             (i: { id: string; city: string | null }) => i.city?.trim() === row['עיר'].trim()
@@ -230,7 +399,6 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
           }
         }
 
-        // Insert contact if name provided
         if (row['איש קשר']) {
           await supabase.from('crm_contacts').insert({
             institution_id: inst.id,
@@ -260,13 +428,11 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
     <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(15,17,23,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: C.surface, borderRadius: 12, width: 620, maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.22)' }} dir="rtl">
 
-        {/* Header */}
         <div style={{ padding: '16px 22px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>📤 ייבוא מוסדות מ-CSV</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 18, color: C.textSub, cursor: 'pointer' }}>✕</button>
         </div>
 
-        {/* Step indicator */}
         <div style={{ display: 'flex', padding: '10px 22px', gap: 6, borderBottom: `1px solid ${C.border}` }}>
           {(['העלאה', 'תצוגה מקדימה', 'ייבוא', 'סיום'] as const).map((label, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: step >= i ? 1 : 0.35 }}>
@@ -280,8 +446,6 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
         </div>
 
         <div style={{ overflowY: 'auto', padding: '18px 22px', flex: 1 }}>
-
-          {/* Step 0 — Upload */}
           {step === 0 && (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: C.aiBg, border: `1px solid ${C.ai}20`, borderRadius: 8, marginBottom: 14, fontSize: 13 }}>
@@ -309,7 +473,6 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
             </>
           )}
 
-          {/* Step 1 — Preview */}
           {step === 1 && (
             <>
               <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
@@ -359,7 +522,6 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
             </>
           )}
 
-          {/* Step 2 — Importing spinner */}
           {step === 2 && importing && (
             <div style={{ textAlign: 'center', padding: '40px 0' }}>
               <div style={{ fontSize: 32, marginBottom: 12, animation: 'spin 1s linear infinite' }}>⏳</div>
@@ -368,7 +530,6 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
             </div>
           )}
 
-          {/* Step 3 — Done */}
           {step === 3 && result && (
             <div style={{ textAlign: 'center', padding: '28px 0' }}>
               <div style={{ fontSize: 44, marginBottom: 12 }}>✅</div>
@@ -399,7 +560,6 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
           )}
         </div>
 
-        {/* Footer buttons */}
         {step === 1 && (
           <div style={{ padding: '13px 22px', borderTop: `1px solid ${C.border}`, display: 'flex', gap: 8 }}>
             <button
@@ -504,6 +664,23 @@ const AddInstitutionModal = ({ onClose, onAdded }: AddInstitutionModalProps) => 
   );
 };
 
+// ── sort helpers ──────────────────────────────────────────────
+
+const sortRows = (rows: InstitutionRow[], key: SortKey, dir: SortDir): InstitutionRow[] => {
+  return [...rows].sort((a, b) => {
+    let av: string | null = null;
+    let bv: string | null = null;
+    if (key === 'city') { av = a.city; bv = b.city; }
+    else if (key === 'name') { av = a.name; bv = b.name; }
+    else if (key === 'crm_stage') { av = a.crm_stage; bv = b.crm_stage; }
+    else if (key === 'crm_last_contact_at') { av = a.crm_last_contact_at; bv = b.crm_last_contact_at; }
+    const aStr = av ?? '';
+    const bStr = bv ?? '';
+    const cmp = aStr.localeCompare(bStr, 'he');
+    return dir === 'asc' ? cmp : -cmp;
+  });
+};
+
 // ── main component ────────────────────────────────────────────
 
 interface Props {
@@ -528,6 +705,9 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
   const [filterCity, setFilterCity] = useState('הכל');
   const [filterInstructor, setFilterInstructor] = useState('הכל');
 
+  const [sortKey, setSortKey] = useState<SortKey>('city');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+
   // ── load data ────────────────────────────────────────────────
   const fetchInstitutions = useCallback(async () => {
     setLoading(true);
@@ -537,11 +717,10 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
         id, name, city,
         crm_class, crm_stage, crm_last_contact_at, crm_next_step, crm_next_step_date,
         crm_owner_id, crm_assigned_instructor_id,
-        crm_potential,
+        crm_potential, crm_notes, crm_risk,
         instructor:crm_assigned_instructor_id (id, full_name),
         contacts:crm_contacts (id, name, role, is_primary)
-      `)
-      .order('name');
+      `);
 
     if (mode === 'leads') {
       query = query.or('crm_class.eq.Lead,crm_class.is.null');
@@ -552,11 +731,31 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
     const { data, error } = await query;
 
     if (!error && data) {
+      const institutionIds = data.map((d: any) => d.id);
+
+      // Fetch primary contact phones in one query
+      const phoneMap: Record<string, string | null> = {};
+      if (institutionIds.length > 0) {
+        const { data: phoneData } = await supabase
+          .from('crm_contacts')
+          .select('institution_id, phone')
+          .in('institution_id', institutionIds)
+          .eq('is_primary', true);
+        if (phoneData) {
+          for (const row of phoneData) {
+            if (!phoneMap[row.institution_id]) {
+              phoneMap[row.institution_id] = row.phone ?? null;
+            }
+          }
+        }
+      }
+
       setRows(
         data.map((d: any) => ({
           ...d,
           instructor: Array.isArray(d.instructor) ? d.instructor[0] ?? null : d.instructor,
           contacts: Array.isArray(d.contacts) ? d.contacts : [],
+          primaryPhone: phoneMap[d.id] ?? null,
         })),
       );
     }
@@ -571,16 +770,20 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
     rows.map((r) => r.instructor?.full_name).filter(Boolean),
   )] as string[];
 
-  // ── filtering ────────────────────────────────────────────────
-  const filtered = rows.filter((r) => {
-    if (search && !r.name.includes(search) && !(r.city ?? '').includes(search)) return false;
-    if (filterClass !== 'הכל' && r.crm_class !== filterClass) return false;
-    if (filterStage !== 'הכל' && r.crm_stage !== filterStage) return false;
-    if (filterCity !== 'הכל' && r.city !== filterCity) return false;
-    if (filterInstructor === 'לא משויך' && r.instructor) return false;
-    if (filterInstructor !== 'הכל' && filterInstructor !== 'לא משויך' && r.instructor?.full_name !== filterInstructor) return false;
-    return true;
-  });
+  // ── filtering + sorting ───────────────────────────────────────
+  const filtered = sortRows(
+    rows.filter((r) => {
+      if (search && !r.name.includes(search) && !(r.city ?? '').includes(search)) return false;
+      if (filterClass !== 'הכל' && r.crm_class !== filterClass) return false;
+      if (filterStage !== 'הכל' && r.crm_stage !== filterStage) return false;
+      if (filterCity !== 'הכל' && r.city !== filterCity) return false;
+      if (filterInstructor === 'לא משויך' && r.instructor) return false;
+      if (filterInstructor !== 'הכל' && filterInstructor !== 'לא משויך' && r.instructor?.full_name !== filterInstructor) return false;
+      return true;
+    }),
+    sortKey,
+    sortDir,
+  );
 
   const unassignedCount = rows.filter((r) => !r.instructor).length;
   const hasActiveFilters = filterClass !== 'הכל' || filterStage !== 'הכל' || filterCity !== 'הכל' || filterInstructor !== 'הכל';
@@ -597,7 +800,8 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
     const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
     if (diff === 0) return 'היום';
     if (diff === 1) return 'אתמול';
-    return `${diff}י׳`;
+    if (diff <= 30) return `לפני ${diff} ימים`;
+    return new Date(iso).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
   const primaryContact = (row: InstitutionRow) =>
@@ -610,6 +814,28 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
     color: active ? C.accent : C.textSub,
     fontSize: 12, cursor: 'pointer', outline: 'none',
     fontWeight: active ? 600 : 400,
+  });
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+
+  const sortArrow = (key: SortKey) => {
+    if (sortKey !== key) return <span style={{ color: C.textDim, marginRight: 2 }}>↕</span>;
+    return <span style={{ color: C.accent, marginRight: 2 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>;
+  };
+
+  const thStyle = (key?: SortKey): React.CSSProperties => ({
+    padding: '9px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600,
+    color: key && sortKey === key ? C.accent : C.textSub,
+    borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap',
+    cursor: key ? 'pointer' : 'default',
+    userSelect: 'none',
   });
 
   // ── handle assign result ─────────────────────────────────────
@@ -626,6 +852,29 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
     setAssignToast(`✅ מדריך שויך — הודעה נשלחה ל${instructorName} עם פרטי הליד`);
     setTimeout(() => setAssignToast(null), 4000);
   };
+
+  const handleNotesSaved = (id: string, notes: string) => {
+    setRows((prev) => prev.map((r) => r.id === id ? { ...r, crm_notes: notes || null } : r));
+  };
+
+  const handleRiskChanged = (id: string, risk: string) => {
+    setRows((prev) => prev.map((r) => r.id === id ? { ...r, crm_risk: risk } : r));
+  };
+
+  // Sortable column headers config
+  const SORTABLE_COLS: { label: string; key?: SortKey; colSpan?: number }[] = [
+    { label: 'מוסד', key: 'name' },
+    { label: 'עיר', key: 'city' },
+    { label: 'שלב', key: 'crm_stage' },
+    { label: 'איש קשר' },
+    { label: 'טלפון' },
+    { label: mode === 'leads' ? 'מדריך מוכר' : 'מדריך לתכנית' },
+    { label: 'קשר אחרון', key: 'crm_last_contact_at' },
+    { label: 'פעולה הבאה' },
+    { label: 'הזדמנות' },
+    { label: 'הערות' },
+    { label: 'סטטוס' },
+  ];
 
   return (
     <div dir="rtl" style={{ padding: '20px 24px', overflowY: 'auto' }}>
@@ -651,7 +900,6 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
           {assignToast}
         </div>
       )}
-
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -702,15 +950,21 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: C.bg }}>
-                {['מוסד', 'עיר', 'סיווג', 'שלב', 'איש קשר', mode === 'leads' ? 'מדריך מוכר' : 'מדריך לתכנית', 'קשר אחרון', 'פעולה הבאה', 'הזדמנות'].map((h) => (
-                  <th key={h} style={{ padding: '9px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: C.textSub, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                {SORTABLE_COLS.map(({ label, key }) => (
+                  <th
+                    key={label}
+                    style={thStyle(key)}
+                    onClick={key ? () => handleSort(key) : undefined}
+                  >
+                    {key ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>{label}{sortArrow(key)}</span> : label}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ padding: '32px', textAlign: 'center', color: C.textSub, fontSize: 13 }}>לא נמצאו מוסדות</td>
+                  <td colSpan={SORTABLE_COLS.length} style={{ padding: '32px', textAlign: 'center', color: C.textSub, fontSize: 13 }}>לא נמצאו מוסדות</td>
                 </tr>
               ) : filtered.map((row) => {
                 const contact = primaryContact(row);
@@ -732,11 +986,6 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
                       {row.city ?? '—'}
                     </td>
 
-                    {/* Classification */}
-                    <td style={{ padding: '9px 12px' }}>
-                      {row.crm_class ? classBadge(row.crm_class) : <span style={{ color: C.textDim, fontSize: 12 }}>—</span>}
-                    </td>
-
                     {/* Stage */}
                     <td style={{ padding: '9px 12px' }}>
                       {row.crm_stage ? stageBadge(row.crm_stage) : <span style={{ color: C.textDim, fontSize: 12 }}>—</span>}
@@ -752,6 +1001,11 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
                       ) : (
                         <span style={{ color: C.textDim, fontSize: 12 }}>—</span>
                       )}
+                    </td>
+
+                    {/* Primary contact phone */}
+                    <td style={{ padding: '9px 12px', fontSize: 12, color: row.primaryPhone ? C.text : C.textDim }}>
+                      {row.primaryPhone ?? '—'}
                     </td>
 
                     {/* Assigned instructor */}
@@ -790,6 +1044,27 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
                     {/* Open opportunity / potential */}
                     <td style={{ padding: '9px 12px', fontSize: 13, fontWeight: 700, color: C.success }}>
                       {row.crm_potential != null ? `₪${Number(row.crm_potential).toLocaleString('he-IL')}` : '—'}
+                    </td>
+
+                    {/* Notes */}
+                    <td
+                      style={{ padding: '9px 12px', minWidth: 140, maxWidth: 200 }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <NotesPopover
+                        institutionId={row.id}
+                        notes={row.crm_notes}
+                        onSaved={handleNotesSaved}
+                      />
+                    </td>
+
+                    {/* Status / Risk */}
+                    <td style={{ padding: '9px 12px' }}>
+                      <RiskDropdown
+                        institutionId={row.id}
+                        risk={row.crm_risk}
+                        onChanged={handleRiskChanged}
+                      />
                     </td>
                   </tr>
                 );

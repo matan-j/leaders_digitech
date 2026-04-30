@@ -502,7 +502,7 @@ export default function CRMPipeline() {
         id, name, city, crm_stage, crm_class, crm_last_contact_at, crm_potential,
         instructor:crm_assigned_instructor_id (id, full_name)
       `)
-      .eq('crm_class', 'Lead')
+      .in('crm_class', ['Lead', 'Customer'])
       .order('name');
 
     if (!error && data) {

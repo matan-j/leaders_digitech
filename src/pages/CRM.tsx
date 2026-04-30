@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import CRMDashboard from '@/components/crm/CRMDashboard';
 import CRMInstitutionsList from '@/components/crm/CRMInstitutionsList';
 import CRMPipeline from '@/components/crm/CRMPipeline';
@@ -6,6 +7,15 @@ import CRMMessagesEditor from '@/components/crm/CRMMessagesEditor';
 import CRMBroadcast from '@/components/crm/CRMBroadcast';
 
 export type CRMTab = 'dashboard' | 'leads' | 'customers' | 'pipeline' | 'messages' | 'broadcast';
+
+const TAB_FROM_LABEL: Record<string, CRMTab> = {
+  'דשבורד': 'dashboard',
+  'לידים': 'leads',
+  'לקוחות': 'customers',
+  'פייפליין': 'pipeline',
+  'עורך הודעות': 'messages',
+  'שליחה בקבוצות': 'broadcast',
+};
 
 const C = {
   surface: '#FFFFFF',
@@ -24,7 +34,9 @@ const NAV_TABS: { id: CRMTab; label: string }[] = [
 ];
 
 const CRM = () => {
-  const [activeTab, setActiveTab] = useState<CRMTab>('dashboard');
+  const [searchParams] = useSearchParams();
+  const initialTab = TAB_FROM_LABEL[searchParams.get('tab') ?? ''] ?? 'dashboard';
+  const [activeTab, setActiveTab] = useState<CRMTab>(initialTab);
   const [openCsvImport, setOpenCsvImport] = useState(false);
 
   return (

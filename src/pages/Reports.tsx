@@ -38,6 +38,7 @@ interface InstructorReport {
   full_name: string;
   hourly_rate: number | null;
   total_reports: number;
+  total_lessons: number;
   total_hours: number;
   total_salary: number;
   reports: LessonReportDetail[];
@@ -54,6 +55,7 @@ interface LessonReportDetail {
   is_lesson_ok: boolean;
   is_completed: boolean;
   hourly_rate: number;
+  lessons_count: number;
   created_at: string;
   attendanceData: AttendanceRecord[];
   course_instance_id?: string;
@@ -83,6 +85,7 @@ interface InstitutionReport {
 interface SalaryRow {
   instructor_id: string;
   full_name: string;
+  report_count: number;
   lesson_count: number;
   total_pay: number;
 }
@@ -133,11 +136,11 @@ const Reports = () => {
     }
   };
 
-  // Generate months list (current month + 12 months forward)
+  // Generate months list (current month + 12 months back)
   const monthsList = useMemo(() => {
     const months = [];
     for (let i = 0; i <= 12; i++) {
-      const monthDate = addMonths(new Date(), i);
+      const monthDate = addMonths(new Date(), -i);
       months.push({
         key: i === 0 ? 'current' : `month-${i}`,
         label: i === 0 ? 'החודש הנוכחי' : format(monthDate, 'MMMM yyyy', { locale: he }),
@@ -418,20 +421,28 @@ const Reports = () => {
 
   const selectedMonthDates = useMemo(() => {
     const m = monthsList.find(m => m.key === selectedMonth);
-    return m
+    const result = m
       ? { start: m.startDate, end: m.endDate }
       : { start: startOfMonth(new Date()), end: endOfMonth(new Date()) };
+    console.log('SELECTED MONTH DATES', result);
+    return result;
   }, [selectedMonth, monthsList]);
 
   const fetchSalaryData = useCallback(async (startDate: Date, endDate: Date) => {
     setSalaryLoading(true);
     try {
+      const rangeStart = new Date(startDate);
+      rangeStart.setUTCHours(0, 0, 0, 0);
+      const rangeEnd = new Date(endDate);
+      rangeEnd.setUTCHours(23, 59, 59, 999);
       const { data, error } = await supabase
         .from('lesson_reports')
-        .select('id, instructor_id, instructor:instructor_id(id, full_name)')
+        .select('id, instructor_id, lessons_count, instructor:instructor_id(id, full_name)')
         .eq('is_completed', true)
-        .gte('created_at', startDate.toISOString())
-        .lte('created_at', endDate.toISOString());
+        .gte('created_at', rangeStart.toISOString())
+        .lte('created_at', rangeEnd.toISOString());
+
+      console.log('SALARY DATA RAW:', JSON.stringify(data?.slice(0,3)));
 
       if (error) throw error;
 
@@ -444,13 +455,16 @@ const Reports = () => {
           map.set(r.instructor_id, {
             instructor_id: r.instructor_id,
             full_name: instructor.full_name,
+            report_count: 0,
             lesson_count: 0,
             total_pay: 0,
           });
         }
         const row = map.get(r.instructor_id)!;
-        row.lesson_count += 1;
-        row.total_pay += 100;
+        const lessons = (r.lessons_count as number | null) ?? 1;
+        row.report_count += 1;
+        row.lesson_count += lessons;
+        row.total_pay += 100 * lessons;
       }
       setSalaryData(
         Array.from(map.values()).sort((a, b) => a.full_name.localeCompare(b.full_name, 'he'))
@@ -461,16 +475,17 @@ const Reports = () => {
     } finally {
       setSalaryLoading(false);
     }
-  }, []);
+  }, [reportType]);
 
   const exportSalaryCsv = useCallback(() => {
     const label = monthsList.find(m => m.key === selectedMonth)?.label ?? '';
+    const totalReports = salaryData.reduce((s, r) => s + r.report_count, 0);
     const totalLessons = salaryData.reduce((s, r) => s + r.lesson_count, 0);
     const totalPay = salaryData.reduce((s, r) => s + r.total_pay, 0);
     const rows = [
-      ['מדריך', 'שיעורים שדווחו', 'סה"כ לתשלום'],
-      ...salaryData.map(r => [r.full_name, String(r.lesson_count), String(r.total_pay)]),
-      ['סה"כ', String(totalLessons), String(totalPay)],
+      ['מדריך', 'דיווחים', 'שיעורים', 'סה"כ לתשלום'],
+      ...salaryData.map(r => [r.full_name, String(r.report_count), String(r.lesson_count), String(r.total_pay)]),
+      ['סה"כ', String(totalReports), String(totalLessons), String(totalPay)],
     ];
     const csv = rows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -483,10 +498,10 @@ const Reports = () => {
   }, [salaryData, selectedMonth, monthsList]);
 
   useEffect(() => {
-    if (reportType === 'salary') {
-      fetchSalaryData(selectedMonthDates.start, selectedMonthDates.end);
-    }
-  }, [reportType, selectedMonthDates, fetchSalaryData]);
+    if (reportType !== 'salary') return;
+    fetchSalaryData(selectedMonthDates.start, selectedMonthDates.end);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportType, selectedMonthDates]);
 
   // Optimized fetchMonthData with better queries
   const fetchMonthData = async (startDate: Date, endDate: Date, monthKey: string) => {
@@ -571,6 +586,7 @@ const Reports = () => {
           participants_count,
           is_lesson_ok,
           is_completed,
+          lessons_count,
           created_at,
           instructor_id,
           course_instance_id,
@@ -678,6 +694,7 @@ const Reports = () => {
         const lessonStatus: 'completed' | 'reported_issues' | 'not_reported' = 
           report.is_completed !== false ? 'completed' : 'reported_issues';
 
+        const reportLessonsCount = (report.lessons_count as number | null) ?? 1;
         const lessonDetail: LessonReportDetail = {
           id: report.id,
           lesson_title: report.lesson_title,
@@ -688,7 +705,8 @@ const Reports = () => {
           total_students: totalStudents,
           is_lesson_ok: report.is_lesson_ok || false,
           is_completed: report.is_completed !== false,
-          hourly_rate: report.is_completed !== false ? hourlyRate : 0, // 0 שקל אם השיעור לא התקיים
+          hourly_rate: report.is_completed !== false ? 100 * reportLessonsCount : 0,
+          lessons_count: report.is_completed !== false ? reportLessonsCount : 0,
           created_at: report.created_at,
           attendanceData,
           course_instance_id: courseInstanceId,
@@ -705,6 +723,7 @@ const Reports = () => {
             full_name: instructor.full_name,
             hourly_rate: instructor.hourly_rate,
             total_reports: 0,
+            total_lessons: 0,
             total_hours: 0,
             total_salary: 0,
             reports: []
@@ -714,8 +733,9 @@ const Reports = () => {
         const instructorReport = instructorMap.get(instructorId)!;
         instructorReport.reports.push(lessonDetail);
         instructorReport.total_reports += 1;
-        instructorReport.total_hours += actualHours; // Use actual calculated hours
-        instructorReport.total_salary += lessonDetail.hourly_rate; // כבר 0 אם השיעור לא התקיים
+        instructorReport.total_lessons += lessonDetail.lessons_count;
+        instructorReport.total_hours += actualHours;
+        instructorReport.total_salary += lessonDetail.hourly_rate;
       }
 
       return Array.from(instructorMap.values());
@@ -932,6 +952,7 @@ const Reports = () => {
               full_name: instructorData.full_name,
               hourly_rate: instructorData.hourly_rate,
               total_reports: 0,
+              total_lessons: 0,
               total_hours: 0,
               total_salary: 0,
               reports: []
@@ -953,7 +974,8 @@ const Reports = () => {
             participants_count: 0,
             total_students: courseInstance.students?.length || 0,
             is_lesson_ok: false,
-            hourly_rate: courseInstance.price_for_instructor || instructor.hourly_rate || 0,
+            hourly_rate: 0,
+            lessons_count: 0,
             created_at: schedule.scheduled_date,
             attendanceData: [],
             course_instance_id: courseInstance.id,
@@ -1110,7 +1132,7 @@ const Reports = () => {
             <CardDescription>בחר בין דוח מדריכים או דוח מוסדות חינוך</CardDescription>
           </CardHeader>
           <CardContent>
-            <Select value={reportType} onValueChange={(value: 'instructors' | 'institutions' | 'salary') => setReportType(value)}>
+            <Select value={reportType} onValueChange={(value: 'instructors' | 'institutions' | 'salary') => { console.log('REPORT TYPE CHANGED TO:', value); setReportType(value); }}>
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -1418,8 +1440,8 @@ const Reports = () => {
                           <div>
                             <CardTitle className="text-xl">{instructor.full_name}</CardTitle>
                             <CardDescription>
-                              שיעורים דווחו: {instructor.total_reports} | 
-                              שעות: {instructor.total_hours.toFixed(1)} | 
+                              שיעורים דווחו: {instructor.total_lessons} |
+                              שעות: {instructor.total_hours.toFixed(1)} |
                               שכר: ₪{instructor.total_salary.toLocaleString()} |
                               אחוז השלמה: {(() => {
                                 const totalScheduled = instructor.reports.length;
@@ -1457,6 +1479,7 @@ const Reports = () => {
                                 <th className="text-right py-3 px-4 font-medium">קורס</th>
                                 <th className="text-right py-3 px-4 font-medium">מוסד</th>
                                 <th className="text-right py-3 px-4 font-medium">נוכחות</th>
+                                <th className="text-right py-3 px-4 font-medium">שיעורים</th>
                                 <th className="text-right py-3 px-4 font-medium">שעות</th>
                                 <th className="text-right py-3 px-4 font-medium">שכר לשיעור</th>
                                 <th className="text-right py-3 px-4 font-medium">סטטוס השיעור</th>
@@ -1521,6 +1544,13 @@ const Reports = () => {
                                           <span className="text-xs text-yellow-600 font-medium">טרם דווח</span>
                                         )}
                                       </div>
+                                    </td>
+                                    <td className="py-3 px-4 font-medium text-center">
+                                      {report.lesson_status === 'not_reported' ? (
+                                        <span className="text-yellow-600 font-medium">—</span>
+                                      ) : (
+                                        <span className="text-blue-600 font-bold">{report.lessons_count}</span>
+                                      )}
                                     </td>
                                     <td className="py-3 px-4 font-medium">
                                       <div className="flex items-center gap-2">
@@ -1596,7 +1626,7 @@ const Reports = () => {
                                   {/* Expandable attendance row */}
                                   {expandedRows.has(report.id) && (
                                     <tr>
-                                      <td colSpan={8} className="bg-gray-50 p-4">
+                                      <td colSpan={10} className="bg-gray-50 p-4">
                                         <div className="grid grid-cols-2 gap-6">
                                           <div>
                                             <h4 className="font-semibold text-green-700 mb-2 flex items-center">
@@ -1645,6 +1675,27 @@ const Reports = () => {
                     </Card>
                   ))
                 )}
+                {filteredMonthData.detailData.length > 0 && (
+                  <Card className="border-t-4 border-blue-500">
+                    <CardContent className="py-4 px-6 flex justify-between items-center">
+                      <span className="font-bold text-lg">סה״כ כל המדריכים</span>
+                      <div className="flex gap-8 text-sm">
+                        <span>
+                          שיעורים:{' '}
+                          <span className="font-bold text-blue-700">
+                            {filteredMonthData.detailData.reduce((s, i) => s + i.total_lessons, 0)}
+                          </span>
+                        </span>
+                        <span>
+                          לתשלום:{' '}
+                          <span className="font-bold text-green-700">
+                            ₪{filteredMonthData.detailData.reduce((s, i) => s + i.total_salary, 0).toLocaleString()}
+                          </span>
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             ) : reportType === 'salary' ? (
               salaryLoading ? (
@@ -1666,7 +1717,8 @@ const Reports = () => {
                     <thead>
                       <tr className="border-b bg-gray-50 text-right">
                         <th className="py-3 px-4 font-medium text-gray-900">מדריך</th>
-                        <th className="py-3 px-4 font-medium text-gray-900">שיעורים שדווחו</th>
+                        <th className="py-3 px-4 font-medium text-gray-900">דיווחים</th>
+                        <th className="py-3 px-4 font-medium text-gray-900">שיעורים</th>
                         <th className="py-3 px-4 font-medium text-gray-900">סה״כ לתשלום</th>
                       </tr>
                     </thead>
@@ -1674,6 +1726,7 @@ const Reports = () => {
                       {salaryData.map(row => (
                         <tr key={row.instructor_id} className="hover:bg-gray-50">
                           <td className="py-3 px-4 font-medium">{row.full_name}</td>
+                          <td className="py-3 px-4 text-gray-600 font-bold">{row.report_count}</td>
                           <td className="py-3 px-4 text-blue-600 font-bold">{row.lesson_count}</td>
                           <td className="py-3 px-4 text-green-600 font-bold">₪{row.total_pay.toLocaleString()}</td>
                         </tr>
@@ -1682,6 +1735,9 @@ const Reports = () => {
                     <tfoot>
                       <tr className="border-t-2 border-gray-300 bg-gray-50">
                         <td className="py-3 px-4 font-bold text-gray-900">סה״כ</td>
+                        <td className="py-3 px-4 font-bold text-gray-700">
+                          {salaryData.reduce((s, r) => s + r.report_count, 0)}
+                        </td>
                         <td className="py-3 px-4 font-bold text-blue-700">
                           {salaryData.reduce((s, r) => s + r.lesson_count, 0)}
                         </td>

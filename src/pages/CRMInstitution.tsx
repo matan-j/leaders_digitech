@@ -222,6 +222,20 @@ const EditContactModal = ({ contact, onClose, onSaved }: EditContactModalProps) 
   );
 };
 
+// ── CRM denormalization helpers ───────────────────────────────
+async function updateInstitutionPotential(institutionId: string): Promise<void> {
+  const { data } = await supabase.from('crm_opportunities').select('value').eq('institution_id', institutionId);
+  const vals = (data ?? []).map((o: { value: number | null }) => o.value).filter((v): v is number => v != null);
+  const maxVal: number | null = vals.length > 0 ? Math.max(...vals) : null;
+  await supabase.from('educational_institutions').update({ crm_potential: maxVal }).eq('id', institutionId);
+}
+
+async function updateInstitutionNextStep(institutionId: string, nextStep: string | null, nextStepDate: string | null): Promise<void> {
+  await supabase.from('educational_institutions')
+    .update({ crm_next_step: nextStep || null, crm_next_step_date: nextStepDate || null })
+    .eq('id', institutionId);
+}
+
 // AddOpportunity Modal
 const STAGES = ['יצירת קשר', 'מעוניין', 'סגירה', 'זכה', 'הפסיד'];
 interface AddOpportunityModalProps { institutionId: string; contacts: Contact[]; onClose: () => void; onSaved: (o: Opportunity) => void; }
@@ -241,7 +255,10 @@ const AddOpportunityModal = ({ institutionId, contacts, onClose, onSaved }: AddO
       next_step: form.next_step || null,
     }]).select().single();
     setSaving(false);
-    if (!error && data) onSaved(data as Opportunity);
+    if (!error && data) {
+      void updateInstitutionPotential(institutionId);
+      onSaved(data as Opportunity);
+    }
   };
 
   return (
@@ -291,7 +308,10 @@ const EditOpportunityModal = ({ opportunity, contacts, onClose, onSaved }: EditO
       updated_at: new Date().toISOString(),
     }).eq('id', opportunity.id).select().single();
     setSaving(false);
-    if (!error && data) onSaved(data as Opportunity);
+    if (!error && data) {
+      void updateInstitutionPotential(opportunity.institution_id);
+      onSaved(data as Opportunity);
+    }
   };
 
   return (
@@ -333,7 +353,10 @@ const LogActivityModal = ({ institutionId, contacts, opportunities, onClose, onS
       occurred_at: form.occurred_at, status: 'Completed',
     }]).select().single();
     setSaving(false);
-    if (!error && data) onSaved(data as Activity);
+    if (!error && data) {
+      if (form.next_step) void updateInstitutionNextStep(institutionId, form.next_step, null);
+      onSaved(data as Activity);
+    }
   };
 
   return (
@@ -390,7 +413,10 @@ const EditActivityModal = ({ activity, contacts, opportunities, onClose, onSaved
       occurred_at: form.occurred_at,
     }).eq('id', activity.id).select().single();
     setSaving(false);
-    if (!error && data) onSaved(data as Activity);
+    if (!error && data) {
+      if (form.next_step) void updateInstitutionNextStep(activity.institution_id, form.next_step, null);
+      onSaved(data as Activity);
+    }
   };
 
   return (
@@ -1206,10 +1232,30 @@ const CRMInstitution = () => {
       {/* Modals */}
       {showAddContact && id && <AddContactModal institutionId={id} onClose={() => setShowAddContact(false)} onSaved={c => { setContacts(p => [c, ...p]); setShowAddContact(false); }} />}
       {editContact && <EditContactModal contact={editContact} onClose={() => setEditContact(null)} onSaved={c => { setContacts(p => p.map(x => x.id === c.id ? c : x)); setEditContact(null); }} />}
-      {showAddOpportunity && id && <AddOpportunityModal institutionId={id} contacts={contacts} onClose={() => setShowAddOpportunity(false)} onSaved={o => { setOpportunities(p => [o, ...p]); setShowAddOpportunity(false); }} />}
-      {editOpportunity && <EditOpportunityModal opportunity={editOpportunity} contacts={contacts} onClose={() => setEditOpportunity(null)} onSaved={o => { setOpportunities(p => p.map(x => x.id === o.id ? o : x)); setEditOpportunity(null); }} />}
-      {showLogActivity && id && <LogActivityModal institutionId={id} contacts={contacts} opportunities={opportunities} onClose={() => setShowLogActivity(false)} onSaved={a => { setActivities(p => [a, ...p]); setShowLogActivity(false); }} />}
-      {editActivity && <EditActivityModal activity={editActivity} contacts={contacts} opportunities={opportunities} onClose={() => setEditActivity(null)} onSaved={a => { setActivities(p => p.map(x => x.id === a.id ? a : x)); setEditActivity(null); }} />}
+      {showAddOpportunity && id && <AddOpportunityModal institutionId={id} contacts={contacts} onClose={() => setShowAddOpportunity(false)} onSaved={o => {
+        const newOpps = [o, ...opportunities];
+        setOpportunities(newOpps);
+        const maxVal = newOpps.map(op => op.value).filter((v): v is number => v != null).reduce((a, b) => Math.max(a, b), 0) || null;
+        setInstitution(p => p ? { ...p, crm_potential: maxVal } : p);
+        setShowAddOpportunity(false);
+      }} />}
+      {editOpportunity && <EditOpportunityModal opportunity={editOpportunity} contacts={contacts} onClose={() => setEditOpportunity(null)} onSaved={o => {
+        const newOpps = opportunities.map(x => x.id === o.id ? o : x);
+        setOpportunities(newOpps);
+        const maxVal = newOpps.map(op => op.value).filter((v): v is number => v != null).reduce((a, b) => Math.max(a, b), 0) || null;
+        setInstitution(p => p ? { ...p, crm_potential: maxVal } : p);
+        setEditOpportunity(null);
+      }} />}
+      {showLogActivity && id && <LogActivityModal institutionId={id} contacts={contacts} opportunities={opportunities} onClose={() => setShowLogActivity(false)} onSaved={a => {
+        setActivities(p => [a, ...p]);
+        if (a.next_step) setInstitution(p => p ? { ...p, crm_next_step: a.next_step, crm_next_step_date: a.next_step_date } : p);
+        setShowLogActivity(false);
+      }} />}
+      {editActivity && <EditActivityModal activity={editActivity} contacts={contacts} opportunities={opportunities} onClose={() => setEditActivity(null)} onSaved={a => {
+        setActivities(p => p.map(x => x.id === a.id ? a : x));
+        if (a.next_step) setInstitution(p => p ? { ...p, crm_next_step: a.next_step, crm_next_step_date: a.next_step_date } : p);
+        setEditActivity(null);
+      }} />}
       {showEdit && <EditInstitutionModal institution={institution} onClose={() => setShowEdit(false)} onSaved={patch => { setInstitution(p => p ? { ...p, ...patch } : p); setShowEdit(false); }} />}
       {showWhatsApp && id && <SendWhatsAppModal contacts={contacts} institutionName={institution.name} institutionId={id} onClose={() => setShowWhatsApp(false)} onSent={a => { setActivities(p => [a, ...p]); setShowWhatsApp(false); }} />}
       {showEmail && id && <SendEmailModal contacts={contacts} institutionName={institution.name} institutionId={id} onClose={() => setShowEmail(false)} onSent={a => { setActivities(p => [a, ...p]); setShowEmail(false); }} />}
@@ -1217,7 +1263,13 @@ const CRMInstitution = () => {
       {/* Header card */}
       <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: '14px 24px 0', flexShrink: 0 }}>
         {/* Back */}
-        <button onClick={() => navigate('/crm')} style={{ background: 'none', border: 'none', fontSize: 12, color: C.textSub, cursor: 'pointer', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
+        <button
+          onClick={() => {
+            const tab = institution?.crm_class === 'Customer' ? 'לקוחות' : 'לידים';
+            navigate(`/crm?tab=${encodeURIComponent(tab)}`);
+          }}
+          style={{ background: 'none', border: 'none', fontSize: 12, color: C.textSub, cursor: 'pointer', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 4 }}
+        >
           ← חזרה ל-CRM
         </button>
 

@@ -210,7 +210,7 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
       try {
         const { data: inst, error: instErr } = await supabase
           .from('educational_institutions')
-          .insert({ name: row['שם מוסד'], city: row['עיר'] || null })
+          .insert({ name: row['שם מוסד'], city: row['עיר'] || null, crm_class: 'Lead', crm_stage: 'יצירת קשר' })
           .select('id')
           .single();
 

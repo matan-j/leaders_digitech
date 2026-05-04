@@ -1383,7 +1383,6 @@ const handleSubmit = async () => {
       }
 
           console.log("Supabase URL:", import.meta.env.VITE_SUPABASE_URL);
-          console.log("Service role key:", import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY);
           // Call Edge Function instead of direct DB operations
           const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/postpone-schedule`, {
             method: 'POST',

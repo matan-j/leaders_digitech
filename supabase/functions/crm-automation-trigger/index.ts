@@ -32,12 +32,15 @@ Deno.serve(async (req) => {
       old_stage: string | null
     }
 
+    console.log('TRIGGER RECEIVED', { institution_id, new_stage, old_stage })
+
     if (!institution_id || !new_stage) {
       throw new Error('institution_id and new_stage are required')
     }
 
     // Skip if stage hasn't changed
     if (old_stage === new_stage) {
+      console.log('STAGES EQUAL, SKIPPING')
       return new Response(JSON.stringify({ ok: true, skipped: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -52,6 +55,7 @@ Deno.serve(async (req) => {
       .eq('is_active', true)
 
     if (rulesErr) throw rulesErr
+    console.log('RULES FOUND', rules?.length)
     if (!rules || rules.length === 0) {
       return new Response(JSON.stringify({ ok: true, fired: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -67,13 +71,26 @@ Deno.serve(async (req) => {
 
     if (instErr) throw instErr
 
-    // 3. Get primary contact
-    const { data: contact } = await supabase
+    // 3. Get primary contact, fallback to any contact
+    let { data: contact } = await supabase
       .from('crm_contacts')
       .select('id, name, phone, email')
       .eq('institution_id', institution_id)
       .eq('is_primary', true)
       .maybeSingle()
+
+    if (!contact) {
+      const { data: fallback } = await supabase
+        .from('crm_contacts')
+        .select('id, name, phone, email')
+        .eq('institution_id', institution_id)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      contact = fallback ?? null
+    }
+
+    console.log('CONTACT', contact)
 
     const vars = {
       institutionName: inst.name ?? '',
@@ -100,6 +117,7 @@ Deno.serve(async (req) => {
       const message = replaceVariables(tmpl.body, vars)
 
       try {
+        console.log('SENDING', rule.channel, contact?.phone)
         if (rule.channel === 'whatsapp' && contact?.phone) {
           await supabase.functions.invoke('crm-ghl', {
             body: { action: 'send_whatsapp', payload: { phone: contact.phone, message, contactName: vars.contactName } },

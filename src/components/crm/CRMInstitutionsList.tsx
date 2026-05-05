@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Trash2 } from 'lucide-react';
 import Papa from 'papaparse';
 import { supabase } from '@/integrations/supabase/client';
 import AssignInstructorModal from './AssignInstructorModal';
@@ -27,7 +29,6 @@ const C = {
   aiBg: '#E0F2FE',
 };
 
-const STAGES = ['יצירת קשר', 'מעוניין', 'סגירה', 'זכה', 'הפסיד'] as const;
 const CLASSES = ['Lead', 'Customer', 'Past Customer'] as const;
 
 // ── badge helpers ─────────────────────────────────────────────
@@ -70,6 +71,7 @@ const getRiskOption = (risk: string | null) =>
 interface CRMContact {
   id: string;
   name: string;
+  phone: string | null;
   role: string | null;
   is_primary: boolean | null;
 }
@@ -93,10 +95,171 @@ interface InstitutionRow {
   primaryPhone?: string | null;
 }
 
+interface PipelineStageOption {
+  name: string;
+}
+
+type InstitutionPatch = Partial<Pick<InstitutionRow, 'crm_stage' | 'crm_last_contact_at'>>;
+type ContactPatch = Partial<Pick<CRMContact, 'name' | 'role' | 'phone'>>;
+
 // ── sort types ────────────────────────────────────────────────
 
 type SortKey = 'city' | 'name' | 'crm_stage' | 'crm_last_contact_at';
 type SortDir = 'asc' | 'desc';
+type PersistedTableState = {
+  search: string;
+  filterClass: string;
+  filterStage: string;
+  filterCity: string;
+  filterInstructor: string;
+  sortKey: SortKey;
+  sortDir: SortDir;
+};
+
+const TABLE_STATE_PREFIX = 'crmInstitutionsListState';
+const SORT_KEYS: SortKey[] = ['city', 'name', 'crm_stage', 'crm_last_contact_at'];
+const SORT_DIRS: SortDir[] = ['asc', 'desc'];
+
+const defaultTableState: PersistedTableState = {
+  search: '',
+  filterClass: 'הכל',
+  filterStage: 'הכל',
+  filterCity: 'הכל',
+  filterInstructor: 'הכל',
+  sortKey: 'city',
+  sortDir: 'asc',
+};
+
+const getStoredTableState = (mode: string): Partial<PersistedTableState> => {
+  try {
+    return JSON.parse(sessionStorage.getItem(`${TABLE_STATE_PREFIX}:${mode}`) ?? '{}');
+  } catch {
+    return {};
+  }
+};
+
+const getPersistedTableState = (params: URLSearchParams, mode: string): PersistedTableState => {
+  const stored = getStoredTableState(mode);
+  const sortKey = params.get('sort') ?? stored.sortKey;
+  const sortDir = params.get('dir') ?? stored.sortDir;
+
+  return {
+    search: params.get('q') ?? stored.search ?? defaultTableState.search,
+    filterClass: params.get('class') ?? stored.filterClass ?? defaultTableState.filterClass,
+    filterStage: params.get('stage') ?? stored.filterStage ?? defaultTableState.filterStage,
+    filterCity: params.get('city') ?? stored.filterCity ?? defaultTableState.filterCity,
+    filterInstructor: params.get('instructor') ?? stored.filterInstructor ?? defaultTableState.filterInstructor,
+    sortKey: SORT_KEYS.includes(sortKey as SortKey) ? sortKey as SortKey : defaultTableState.sortKey,
+    sortDir: SORT_DIRS.includes(sortDir as SortDir) ? sortDir as SortDir : defaultTableState.sortDir,
+  };
+};
+
+const inlineControlStyle: React.CSSProperties = {
+  width: '100%',
+  minWidth: 110,
+  border: `1px solid ${C.border}`,
+  borderRadius: 6,
+  background: C.surface,
+  color: C.text,
+  fontSize: 12,
+  padding: '4px 7px',
+  outline: 'none',
+};
+
+interface InlineSelectCellProps {
+  value: string | null;
+  options: string[];
+  placeholder?: string;
+  onChange: (value: string | null) => void;
+}
+
+const InlineSelectCell = ({ value, options, placeholder = '—', onChange }: InlineSelectCellProps) => {
+  const selectOptions = [
+    ...options,
+    ...(value && !options.includes(value) ? [value] : []),
+  ];
+
+  return (
+    <select
+      value={value ?? ''}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onChange(e.target.value || null)}
+      style={inlineControlStyle}
+    >
+      <option value="">{placeholder}</option>
+      {selectOptions.map((option) => (
+        <option key={option} value={option}>{option}</option>
+      ))}
+    </select>
+  );
+};
+
+interface InlineDateCellProps {
+  value: string | null;
+  onChange: (value: string | null) => void;
+}
+
+const toDateInputValue = (value: string | null) => {
+  if (!value) return '';
+  const isoDate = value.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+  if (isoDate) return isoDate;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+};
+
+const InlineDateCell = ({ value, onChange }: InlineDateCellProps) => (
+  <input
+    type="date"
+    value={toDateInputValue(value)}
+    onClick={(e) => e.stopPropagation()}
+    onChange={(e) => {
+      const next = e.target.value;
+      onChange(next ? `${next}T00:00:00.000Z` : null);
+    }}
+    style={inlineControlStyle}
+  />
+);
+
+interface InlineTextCellProps {
+  value: string | null;
+  placeholder?: string;
+  onSave: (value: string) => void;
+  style?: React.CSSProperties;
+}
+
+const InlineTextCell = ({ value, placeholder = '—', onSave, style }: InlineTextCellProps) => {
+  const [draft, setDraft] = useState(value ?? '');
+
+  useEffect(() => {
+    setDraft(value ?? '');
+  }, [value]);
+
+  const commit = () => {
+    if (draft === (value ?? '')) return;
+    onSave(draft);
+  };
+
+  return (
+    <input
+      value={draft}
+      placeholder={placeholder}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.currentTarget.blur();
+        }
+        if (e.key === 'Escape') {
+          setDraft(value ?? '');
+          e.currentTarget.blur();
+        }
+      }}
+      style={{ ...inlineControlStyle, ...style }}
+    />
+  );
+};
 
 // ── Notes Popover ─────────────────────────────────────────────
 
@@ -111,6 +274,8 @@ const NotesPopover = ({ institutionId, notes, onSaved }: NotesPopoverProps) => {
   const [draft, setDraft] = useState(notes ?? '');
   const [saving, setSaving] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [popoverPosition, setPopoverPosition] = useState({ top: 0, left: 0 });
 
   // Reset draft only when opening the popover, not on every notes prop change.
   // Having `notes` in deps would reset the user's in-progress edits whenever
@@ -119,11 +284,32 @@ const NotesPopover = ({ institutionId, notes, onSaved }: NotesPopoverProps) => {
   useEffect(() => {
     if (!open) return;
     setDraft(notes ?? '');
+    const updatePosition = () => {
+      const rect = ref.current?.getBoundingClientRect();
+      if (!rect) return;
+      const width = 260;
+      const left = Math.min(Math.max(rect.right - width, 8), window.innerWidth - width - 8);
+      setPopoverPosition({ top: rect.bottom + 4, left });
+    };
+    updatePosition();
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (
+        ref.current &&
+        !ref.current.contains(target) &&
+        !popoverRef.current?.contains(target)
+      ) {
+        setOpen(false);
+      }
     };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -159,11 +345,14 @@ const NotesPopover = ({ institutionId, notes, onSaved }: NotesPopoverProps) => {
         {preview ?? <span style={{ fontSize: 11 }}>+ הוסף הערה</span>}
       </div>
 
-      {open && (
-        <div style={{
-          position: 'absolute', top: '100%', right: 0, zIndex: 200,
+      {open && createPortal(
+        <div
+          ref={popoverRef}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+          position: 'fixed', top: popoverPosition.top, left: popoverPosition.left, zIndex: 1000,
           background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.13)', padding: 12, width: 260,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.13)', padding: 12, width: 260, boxSizing: 'border-box',
         }}>
           {/* Popover header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -191,7 +380,8 @@ const NotesPopover = ({ institutionId, notes, onSaved }: NotesPopoverProps) => {
           >
             {saving ? 'שומר...' : 'שמור'}
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -290,9 +480,10 @@ interface ImportResult {
 interface CsvModalProps {
   onClose: () => void;
   onImportDone: () => void;
+  pipelineStageNames: string[];
 }
 
-const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
+const CsvModal = ({ onClose, onImportDone, pipelineStageNames }: CsvModalProps) => {
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
   const [importing, setImporting] = useState(false);
@@ -363,6 +554,7 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
   const runImport = async () => {
     const validRows = csvRows.filter((r) => !r._invalid);
     if (validRows.length === 0) return;
+    const defaultCrmStage = pipelineStageNames[0] ?? null;
 
     setImporting(true);
     setStep(2);
@@ -380,7 +572,7 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
       try {
         const { data: inst, error: instErr } = await supabase
           .from('educational_institutions')
-          .insert({ name: row['שם מוסד'], city: row['עיר'] || null, crm_class: 'Lead', crm_stage: 'יצירת קשר' })
+          .insert({ name: row['שם מוסד'], city: row['עיר'] || null, crm_class: 'Lead', crm_stage: defaultCrmStage })
           .select('id')
           .single();
 
@@ -587,22 +779,32 @@ const CsvModal = ({ onClose, onImportDone }: CsvModalProps) => {
 interface AddInstitutionModalProps {
   onClose: () => void;
   onAdded: () => void;
+  pipelineStageNames: string[];
 }
 
-const AddInstitutionModal = ({ onClose, onAdded }: AddInstitutionModalProps) => {
+const AddInstitutionModal = ({ onClose, onAdded, pipelineStageNames }: AddInstitutionModalProps) => {
+  const defaultCrmStage = pipelineStageNames[0] ?? '';
   const [name, setName] = useState('');
   const [city, setCity] = useState('');
   const [crmClass, setCrmClass] = useState<string>('Lead');
-  const [crmStage, setCrmStage] = useState<string>('יצירת קשר');
+  const [crmStage, setCrmStage] = useState<string>(defaultCrmStage);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const stageOptions = [
+    ...pipelineStageNames,
+    ...(crmStage && !pipelineStageNames.includes(crmStage) ? [crmStage] : []),
+  ];
+
+  useEffect(() => {
+    if (!crmStage && defaultCrmStage) setCrmStage(defaultCrmStage);
+  }, [crmStage, defaultCrmStage]);
 
   const handleSubmit = async () => {
     if (!name.trim()) { setError('שם מוסד הוא שדה חובה'); return; }
     setSaving(true);
     const { error: dbErr } = await supabase
       .from('educational_institutions')
-      .insert({ name: name.trim(), city: city.trim() || null, crm_class: crmClass, crm_stage: crmStage });
+      .insert({ name: name.trim(), city: city.trim() || null, crm_class: crmClass, crm_stage: crmStage || null });
     setSaving(false);
     if (dbErr) { setError(dbErr.message); return; }
     onAdded();
@@ -641,7 +843,8 @@ const AddInstitutionModal = ({ onClose, onAdded }: AddInstitutionModalProps) => 
             <div style={{ flex: 1 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: C.textSub, display: 'block', marginBottom: 5 }}>שלב</label>
               <select value={crmStage} onChange={(e) => setCrmStage(e.target.value)} style={{ ...inputStyle }}>
-                {STAGES.map((s) => <option key={s}>{s}</option>)}
+                {stageOptions.length === 0 && <option value="">— ללא שלב —</option>}
+                {stageOptions.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
           </div>
@@ -666,13 +869,18 @@ const AddInstitutionModal = ({ onClose, onAdded }: AddInstitutionModalProps) => 
 
 // ── sort helpers ──────────────────────────────────────────────
 
-const sortRows = (rows: InstitutionRow[], key: SortKey, dir: SortDir): InstitutionRow[] => {
+const sortRows = (
+  rows: InstitutionRow[],
+  key: SortKey,
+  dir: SortDir,
+  getEffectiveStage: (row: InstitutionRow) => string | null,
+): InstitutionRow[] => {
   return [...rows].sort((a, b) => {
     let av: string | null = null;
     let bv: string | null = null;
     if (key === 'city') { av = a.city; bv = b.city; }
     else if (key === 'name') { av = a.name; bv = b.name; }
-    else if (key === 'crm_stage') { av = a.crm_stage; bv = b.crm_stage; }
+    else if (key === 'crm_stage') { av = getEffectiveStage(a); bv = getEffectiveStage(b); }
     else if (key === 'crm_last_contact_at') { av = a.crm_last_contact_at; bv = b.crm_last_contact_at; }
     const aStr = av ?? '';
     const bStr = bv ?? '';
@@ -691,22 +899,80 @@ interface Props {
 
 const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const persistedTableState = getPersistedTableState(searchParams, mode);
   const [rows, setRows] = useState<InstitutionRow[]>([]);
+  const [pipelineStageNames, setPipelineStageNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCsv, setShowCsv] = useState(false);
   const [showAddInstitution, setShowAddInstitution] = useState(false);
   useEffect(() => { if (openCsvImport) setShowCsv(true); }, [openCsvImport]);
   const [assignTarget, setAssignTarget] = useState<InstitutionRow | null>(null);
   const [assignToast, setAssignToast] = useState<string | null>(null);
+  const [deleteToast, setDeleteToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [inlineEditError, setInlineEditError] = useState<string | null>(null);
 
-  const [search, setSearch] = useState('');
-  const [filterClass, setFilterClass] = useState('הכל');
-  const [filterStage, setFilterStage] = useState('הכל');
-  const [filterCity, setFilterCity] = useState('הכל');
-  const [filterInstructor, setFilterInstructor] = useState('הכל');
+  const [search, setSearch] = useState(persistedTableState.search);
+  const [filterClass, setFilterClass] = useState(persistedTableState.filterClass);
+  const [filterStage, setFilterStage] = useState(persistedTableState.filterStage);
+  const [filterCity, setFilterCity] = useState(persistedTableState.filterCity);
+  const [filterInstructor, setFilterInstructor] = useState(persistedTableState.filterInstructor);
 
-  const [sortKey, setSortKey] = useState<SortKey>('city');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [sortKey, setSortKey] = useState<SortKey>(persistedTableState.sortKey);
+  const [sortDir, setSortDir] = useState<SortDir>(persistedTableState.sortDir);
+
+  useEffect(() => {
+    const state: PersistedTableState = {
+      search,
+      filterClass,
+      filterStage,
+      filterCity,
+      filterInstructor,
+      sortKey,
+      sortDir,
+    };
+
+    sessionStorage.setItem(`${TABLE_STATE_PREFIX}:${mode}`, JSON.stringify(state));
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', mode);
+
+      const setOrDelete = (key: string, value: string, defaultValue: string) => {
+        if (value && value !== defaultValue) next.set(key, value);
+        else next.delete(key);
+      };
+
+      setOrDelete('q', search, defaultTableState.search);
+      setOrDelete('class', filterClass, defaultTableState.filterClass);
+      setOrDelete('stage', filterStage, defaultTableState.filterStage);
+      setOrDelete('city', filterCity, defaultTableState.filterCity);
+      setOrDelete('instructor', filterInstructor, defaultTableState.filterInstructor);
+      setOrDelete('sort', sortKey, defaultTableState.sortKey);
+      setOrDelete('dir', sortDir, defaultTableState.sortDir);
+      return next;
+    }, { replace: true });
+  }, [filterCity, filterClass, filterInstructor, filterStage, mode, search, setSearchParams, sortDir, sortKey]);
+
+  useEffect(() => {
+    if (mode === 'leads') return;
+    if (filterStage !== defaultTableState.filterStage) setFilterStage(defaultTableState.filterStage);
+    if (sortKey === 'crm_stage') setSortKey(defaultTableState.sortKey);
+  }, [filterStage, mode, sortKey]);
+
+  const fetchPipelineStages = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('crm_pipeline_stages')
+      .select('name')
+      .order('order_index');
+
+    if (!error && data) {
+      setPipelineStageNames(
+        (data as PipelineStageOption[])
+          .map((stage) => stage.name?.trim())
+          .filter((name): name is string => Boolean(name)),
+      );
+    }
+  }, []);
 
   // ── load data ────────────────────────────────────────────────
   const fetchInstitutions = useCallback(async () => {
@@ -719,8 +985,9 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
         crm_owner_id, crm_assigned_instructor_id,
         crm_potential, crm_notes, crm_risk,
         instructor:crm_assigned_instructor_id (id, full_name),
-        contacts:crm_contacts (id, name, role, is_primary)
-      `);
+        contacts:crm_contacts (id, name, phone, role, is_primary)
+      `)
+      .eq('is_deleted', false);
 
     if (mode === 'leads') {
       query = query.or('crm_class.eq.Lead,crm_class.is.null');
@@ -763,6 +1030,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
   }, [mode]);
 
   useEffect(() => { fetchInstitutions(); }, [fetchInstitutions]);
+  useEffect(() => { fetchPipelineStages(); }, [fetchPipelineStages]);
 
   // ── derived filter options ───────────────────────────────────
   const cities = [...new Set(rows.map((r) => r.city).filter(Boolean))] as string[];
@@ -771,18 +1039,32 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
   )] as string[];
 
   // ── filtering + sorting ───────────────────────────────────────
+  const defaultStage = pipelineStageNames[0] ?? null;
+  const validStageNames = new Set(pipelineStageNames);
+  const getEffectiveStage = (row: InstitutionRow) => {
+    const stage = row.crm_stage?.trim() ?? '';
+    return stage && validStageNames.has(stage) ? stage : defaultStage;
+  };
+
+  const stageFilterOptions = [
+    ...pipelineStageNames,
+    ...[...new Set(rows.map((r) => r.crm_stage?.trim()).filter(Boolean) as string[])]
+      .filter((stage) => !pipelineStageNames.includes(stage)),
+  ];
+
   const filtered = sortRows(
     rows.filter((r) => {
       if (search && !r.name.includes(search) && !(r.city ?? '').includes(search)) return false;
       if (filterClass !== 'הכל' && r.crm_class !== filterClass) return false;
-      if (filterStage !== 'הכל' && r.crm_stage !== filterStage) return false;
+      if (mode === 'leads' && filterStage !== 'הכל' && getEffectiveStage(r) !== filterStage) return false;
       if (filterCity !== 'הכל' && r.city !== filterCity) return false;
       if (filterInstructor === 'לא משויך' && r.instructor) return false;
       if (filterInstructor !== 'הכל' && filterInstructor !== 'לא משויך' && r.instructor?.full_name !== filterInstructor) return false;
       return true;
     }),
-    sortKey,
+    mode === 'leads' ? sortKey : (sortKey === 'crm_stage' ? defaultTableState.sortKey : sortKey),
     sortDir,
+    getEffectiveStage,
   );
 
   const unassignedCount = rows.filter((r) => !r.instructor).length;
@@ -861,25 +1143,168 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
     setRows((prev) => prev.map((r) => r.id === id ? { ...r, crm_risk: risk } : r));
   };
 
+  const updateInstitutionField = async (id: string, patch: InstitutionPatch) => {
+    const previousRows = rows;
+    setRows((prev) => prev.map((r) => r.id === id ? { ...r, ...patch } : r));
+
+    const { error } = await supabase
+      .from('educational_institutions')
+      .update(patch)
+      .eq('id', id);
+
+    if (error) {
+      setRows(previousRows);
+      setInlineEditError(error.message);
+      setTimeout(() => setInlineEditError(null), 5000);
+      await fetchInstitutions();
+      return false;
+    }
+    return true;
+  };
+
+  const handleStageChange = async (row: InstitutionRow, newStage: string | null) => {
+    if (newStage === row.crm_stage) return;
+
+    const saved = await updateInstitutionField(row.id, { crm_stage: newStage });
+    if (!saved || !newStage) return;
+
+    const { error } = await supabase.functions.invoke('crm-automation-trigger', {
+      body: {
+        institution_id: row.id,
+        new_stage: newStage,
+        old_stage: row.crm_stage ?? null,
+      },
+    });
+
+    if (error) {
+      console.warn('CRM stage automation failed', error);
+      setInlineEditError('השלב עודכן, אך האוטומציה לא הופעלה');
+      setTimeout(() => setInlineEditError(null), 5000);
+    }
+  };
+
+  const patchRowContact = (institutionId: string, contact: CRMContact) => {
+    setRows((prev) => prev.map((r) => {
+      if (r.id !== institutionId) return r;
+      const exists = r.contacts.some((c) => c.id === contact.id);
+      const contacts = exists
+        ? r.contacts.map((c) => c.id === contact.id ? { ...c, ...contact } : c)
+        : [contact, ...r.contacts];
+      const nextPrimaryContact = primaryContact({ ...r, contacts });
+      return { ...r, contacts, primaryPhone: nextPrimaryContact?.phone ?? null };
+    }));
+  };
+
+  const upsertInstitutionContact = async (row: InstitutionRow, patch: ContactPatch, contactToEdit?: CRMContact | null) => {
+    const contact = contactToEdit ?? null;
+    const normalizedPatch: ContactPatch = {};
+    if ('name' in patch) normalizedPatch.name = patch.name?.trim() ?? '';
+    if ('role' in patch) normalizedPatch.role = patch.role?.trim() || null;
+    if ('phone' in patch) normalizedPatch.phone = patch.phone?.trim() || null;
+
+    if (normalizedPatch.name != null && !normalizedPatch.name) {
+      setInlineEditError('שם איש קשר הוא שדה חובה');
+      setTimeout(() => setInlineEditError(null), 5000);
+      return;
+    }
+
+    if (!contact && Object.values(normalizedPatch).every((value) => value == null || value === '')) return;
+    if (!contact && row.contacts.length > 0) return;
+
+    if (contact) {
+      const { data, error } = await supabase
+        .from('crm_contacts')
+        .update({ ...normalizedPatch, updated_at: new Date().toISOString() })
+        .eq('id', contact.id)
+        .select('id, name, phone, role, is_primary')
+        .single();
+
+      if (error || !data) {
+        setInlineEditError(error?.message ?? 'שמירת איש הקשר נכשלה');
+        setTimeout(() => setInlineEditError(null), 5000);
+        await fetchInstitutions();
+        return;
+      }
+
+      patchRowContact(row.id, data as CRMContact);
+      return;
+    }
+
+    const insertPayload = {
+      institution_id: row.id,
+      name: normalizedPatch.name || row.name,
+      is_primary: true,
+      ...('role' in normalizedPatch ? { role: normalizedPatch.role } : {}),
+      ...('phone' in normalizedPatch ? { phone: normalizedPatch.phone } : {}),
+    };
+    const { data, error } = await supabase
+      .from('crm_contacts')
+      .insert(insertPayload)
+      .select('id, name, phone, role, is_primary')
+      .single();
+
+    if (error || !data) {
+      setInlineEditError(error?.message ?? 'יצירת איש הקשר נכשלה');
+      setTimeout(() => setInlineEditError(null), 5000);
+      await fetchInstitutions();
+      return;
+    }
+
+    patchRowContact(row.id, data as CRMContact);
+  };
+
+  const handleContactNameChange = (row: InstitutionRow, contact: CRMContact | null, newName: string) => {
+    void upsertInstitutionContact(row, { name: newName }, contact);
+  };
+
+  const handleContactRoleChange = (row: InstitutionRow, contact: CRMContact | null, newRole: string) => {
+    void upsertInstitutionContact(row, { role: newRole }, contact);
+  };
+
+  const handleContactPhoneChange = (row: InstitutionRow, contact: CRMContact | null, newPhone: string) => {
+    void upsertInstitutionContact(row, { phone: newPhone }, contact);
+  };
+
+  const showDeleteToast = (message: string, type: 'success' | 'error') => {
+    setDeleteToast({ message, type });
+    setTimeout(() => setDeleteToast(null), 5000);
+  };
+
+  const handleDeleteInstitution = async (row: InstitutionRow) => {
+    if (!window.confirm('האם אתה בטוח שברצונך למחוק את המוסד? פעולה זו אינה ניתנת לביטול.')) return;
+
+    const { error } = await supabase
+      .from('educational_institutions')
+      .update({ is_deleted: true })
+      .eq('id', row.id);
+
+    if (error) {
+      console.error('Failed to delete institution', error);
+      showDeleteToast('לא ניתן למחוק את המוסד. ייתכן שקיימים נתונים מקושרים.', 'error');
+      return;
+    }
+
+    setRows((prev) => prev.filter((r) => r.id !== row.id));
+    showDeleteToast('המוסד נמחק בהצלחה', 'success');
+  };
+
   // Sortable column headers config
   const SORTABLE_COLS: { label: string; key?: SortKey; colSpan?: number }[] = [
     { label: 'מוסד', key: 'name' },
     { label: 'עיר', key: 'city' },
+    { label: 'סטטוס' },
     { label: 'שלב', key: 'crm_stage' },
-    { label: 'איש קשר' },
-    { label: 'טלפון' },
+    { label: 'אנשי קשר' },
     { label: mode === 'leads' ? 'מדריך מוכר' : 'מדריך לתכנית' },
     { label: 'קשר אחרון', key: 'crm_last_contact_at' },
-    { label: 'פעולה הבאה' },
-    { label: 'הזדמנות' },
     { label: 'הערות' },
-    { label: 'סטטוס' },
+    { label: 'פעולות' },
   ];
 
   return (
     <div dir="rtl" style={{ padding: '20px 24px', overflowY: 'auto' }}>
-      {showCsv && <CsvModal onClose={() => setShowCsv(false)} onImportDone={fetchInstitutions} />}
-      {showAddInstitution && <AddInstitutionModal onClose={() => setShowAddInstitution(false)} onAdded={fetchInstitutions} />}
+      {showCsv && <CsvModal onClose={() => setShowCsv(false)} onImportDone={fetchInstitutions} pipelineStageNames={pipelineStageNames} />}
+      {showAddInstitution && <AddInstitutionModal onClose={() => setShowAddInstitution(false)} onAdded={fetchInstitutions} pipelineStageNames={pipelineStageNames} />}
       {assignTarget && (
         <AssignInstructorModal
           institutionId={assignTarget.id}
@@ -901,6 +1326,28 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
         </div>
       )}
 
+      {inlineEditError && (
+        <div style={{
+          position: 'fixed', bottom: assignToast ? 72 : 24, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 999, background: C.danger, color: '#fff',
+          padding: '10px 20px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+        }}>
+          {inlineEditError}
+        </div>
+      )}
+
+      {deleteToast && (
+        <div style={{
+          position: 'fixed', bottom: assignToast || inlineEditError ? 72 : 24, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 999, background: deleteToast.type === 'success' ? C.success : C.danger, color: '#fff',
+          padding: '10px 20px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+        }}>
+          {deleteToast.message}
+        </div>
+      )}
+
       {/* Filters */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
         <input
@@ -916,7 +1363,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
         {mode === 'leads' && (
           <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)} style={filterSelectStyle(filterStage !== 'הכל')}>
             <option value="הכל">שלב בפייפליין</option>
-            {STAGES.map((o) => <option key={o}>{o}</option>)}
+            {stageFilterOptions.map((o) => <option key={o}>{o}</option>)}
           </select>
         )}
         <select value={filterCity} onChange={(e) => setFilterCity(e.target.value)} style={filterSelectStyle(filterCity !== 'הכל')}>
@@ -950,7 +1397,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: C.bg }}>
-                {SORTABLE_COLS.map(({ label, key }) => (
+                {SORTABLE_COLS.filter((col) => mode === 'leads' || col.key !== 'crm_stage').map(({ label, key }) => (
                   <th
                     key={label}
                     style={thStyle(key)}
@@ -964,10 +1411,11 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={SORTABLE_COLS.length} style={{ padding: '32px', textAlign: 'center', color: C.textSub, fontSize: 13 }}>לא נמצאו מוסדות</td>
+                  <td colSpan={SORTABLE_COLS.filter((col) => mode === 'leads' || col.key !== 'crm_stage').length} style={{ padding: '32px', textAlign: 'center', color: C.textSub, fontSize: 13 }}>לא נמצאו מוסדות</td>
                 </tr>
               ) : filtered.map((row) => {
-                const contact = primaryContact(row);
+                const visibleContact = primaryContact(row);
+                const additionalContactsCount = Math.max(row.contacts.length - 1, 0);
                 return (
                   <tr
                     key={row.id}
@@ -986,26 +1434,76 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
                       {row.city ?? '—'}
                     </td>
 
-                    {/* Stage */}
+                    {/* Status / Risk */}
                     <td style={{ padding: '9px 12px' }}>
-                      {row.crm_stage ? stageBadge(row.crm_stage) : <span style={{ color: C.textDim, fontSize: 12 }}>—</span>}
+                      <RiskDropdown
+                        institutionId={row.id}
+                        risk={row.crm_risk}
+                        onChanged={handleRiskChanged}
+                      />
                     </td>
 
-                    {/* Primary contact */}
-                    <td style={{ padding: '9px 12px' }}>
-                      {contact ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <Av name={contact.name} size={22} />
-                          <span style={{ fontSize: 12 }}>{contact.name}</span>
+                    {mode === 'leads' && (
+                      <>
+                        {/* Stage */}
+                        <td style={{ padding: '9px 12px' }} onClick={(e) => e.stopPropagation()}>
+                          <InlineSelectCell
+                            value={getEffectiveStage(row)}
+                            options={stageFilterOptions}
+                            onChange={(value) => handleStageChange(row, value)}
+                          />
+                        </td>
+                      </>
+                    )}
+
+                    {/* Contacts */}
+                    <td style={{ padding: '9px 12px' }} onClick={(e) => e.stopPropagation()}>
+                      <div style={{ display: 'flex', gap: 7, alignItems: 'flex-start', minWidth: 160 }}>
+                        <Av name={visibleContact?.name ?? '?'} size={22} />
+                        <div style={{ display: 'grid', gap: 4, minWidth: 130, maxWidth: 190 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <InlineTextCell
+                                value={visibleContact?.name ?? null}
+                                placeholder="+ איש קשר"
+                                onSave={(value) => handleContactNameChange(row, visibleContact, value)}
+                              />
+                            </div>
+                            {additionalContactsCount > 0 && (
+                              <span
+                                title={`יש עוד ${additionalContactsCount} אנשי קשר`}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  minWidth: 24,
+                                  height: 20,
+                                  padding: '0 6px',
+                                  borderRadius: 999,
+                                  background: C.accentBg,
+                                  color: C.accent,
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                +{additionalContactsCount}
+                              </span>
+                            )}
+                          </div>
+                          <InlineTextCell
+                            value={visibleContact?.role ?? null}
+                            placeholder="+ תפקיד"
+                            onSave={(value) => handleContactRoleChange(row, visibleContact, value)}
+                            style={{ fontSize: 11, color: C.textSub, padding: '3px 7px' }}
+                          />
+                          <InlineTextCell
+                            value={visibleContact?.phone ?? null}
+                            placeholder="+ טלפון"
+                            onSave={(value) => handleContactPhoneChange(row, visibleContact, value)}
+                          />
                         </div>
-                      ) : (
-                        <span style={{ color: C.textDim, fontSize: 12 }}>—</span>
-                      )}
-                    </td>
-
-                    {/* Primary contact phone */}
-                    <td style={{ padding: '9px 12px', fontSize: 12, color: row.primaryPhone ? C.text : C.textDim }}>
-                      {row.primaryPhone ?? '—'}
+                      </div>
                     </td>
 
                     {/* Assigned instructor */}
@@ -1026,24 +1524,11 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
                     </td>
 
                     {/* Last contact */}
-                    <td style={{ padding: '9px 12px', fontSize: 12, color: C.textSub }}>
-                      {formatLastContact(row.crm_last_contact_at)}
-                    </td>
-
-                    {/* Next step */}
-                    <td style={{ padding: '9px 12px' }}>
-                      {row.crm_next_step ? (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: C.accentBg, color: C.accent }}>
-                          {row.crm_next_step}
-                        </span>
-                      ) : (
-                        <span style={{ color: C.textDim, fontSize: 12 }}>—</span>
-                      )}
-                    </td>
-
-                    {/* Open opportunity / potential */}
-                    <td style={{ padding: '9px 12px', fontSize: 13, fontWeight: 700, color: C.success }}>
-                      {row.crm_potential != null ? `₪${Number(row.crm_potential).toLocaleString('he-IL')}` : '—'}
+                    <td style={{ padding: '9px 12px' }} onClick={(e) => e.stopPropagation()}>
+                      <InlineDateCell
+                        value={row.crm_last_contact_at}
+                        onChange={(value) => updateInstitutionField(row.id, { crm_last_contact_at: value })}
+                      />
                     </td>
 
                     {/* Notes */}
@@ -1058,14 +1543,31 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
                       />
                     </td>
 
-                    {/* Status / Risk */}
-                    <td style={{ padding: '9px 12px' }}>
-                      <RiskDropdown
-                        institutionId={row.id}
-                        risk={row.crm_risk}
-                        onChanged={handleRiskChanged}
-                      />
+                    {/* Actions */}
+                    <td style={{ padding: '9px 12px' }} onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteInstitution(row)}
+                        title="מחיקת מוסד"
+                        aria-label="מחיקת מוסד"
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: 6,
+                          border: `1px solid ${C.danger}30`,
+                          background: C.dangerBg,
+                          color: C.danger,
+                          cursor: 'pointer',
+                          fontSize: 14,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Trash2 size={15} strokeWidth={2} aria-hidden="true" />
+                      </button>
                     </td>
+
                   </tr>
                 );
               })}

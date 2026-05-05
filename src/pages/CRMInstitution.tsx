@@ -237,18 +237,23 @@ async function updateInstitutionNextStep(institutionId: string, nextStep: string
 }
 
 // AddOpportunity Modal
-const STAGES = ['יצירת קשר', 'מעוניין', 'סגירה', 'זכה', 'הפסיד'];
-interface AddOpportunityModalProps { institutionId: string; contacts: Contact[]; onClose: () => void; onSaved: (o: Opportunity) => void; }
-const AddOpportunityModal = ({ institutionId, contacts, onClose, onSaved }: AddOpportunityModalProps) => {
-  const [form, setForm] = useState({ name: '', stage: 'יצירת קשר', contact_id: '', value: '', decision_date: '', next_step: '' });
+interface AddOpportunityModalProps { institutionId: string; contacts: Contact[]; pipelineStageNames: string[]; onClose: () => void; onSaved: (o: Opportunity) => void; }
+const AddOpportunityModal = ({ institutionId, contacts, pipelineStageNames, onClose, onSaved }: AddOpportunityModalProps) => {
+  const defaultStage = pipelineStageNames[0] ?? '';
+  const [form, setForm] = useState({ name: '', stage: defaultStage, contact_id: '', value: '', decision_date: '', next_step: '' });
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
+
+  useEffect(() => {
+    if (!form.stage && defaultStage) set('stage', defaultStage);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.stage, defaultStage]);
 
   const save = async () => {
     if (!form.name.trim()) return;
     setSaving(true);
     const { data, error } = await supabase.from('crm_opportunities').insert([{
-      institution_id: institutionId, name: form.name, stage: form.stage, status: 'open',
+      institution_id: institutionId, name: form.name, stage: form.stage || defaultStage, status: 'open',
       contact_id: form.contact_id || null,
       value: form.value ? parseFloat(form.value) : null,
       decision_date: form.decision_date || null,
@@ -266,7 +271,7 @@ const AddOpportunityModal = ({ institutionId, contacts, onClose, onSaved }: AddO
       <Field label="שם הזדמנות *"><input style={inputStyle} value={form.name} onChange={e => set('name', e.target.value)} placeholder="תוכנית AI לחטיבת ביניים" /></Field>
       <Field label="שלב">
         <select style={selectStyle} value={form.stage} onChange={e => set('stage', e.target.value)}>
-          {STAGES.map(s => <option key={s}>{s}</option>)}
+          {pipelineStageNames.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
       </Field>
       <Field label="איש קשר">
@@ -283,8 +288,8 @@ const AddOpportunityModal = ({ institutionId, contacts, onClose, onSaved }: AddO
 };
 
 // EditOpportunity Modal
-interface EditOpportunityModalProps { opportunity: Opportunity; contacts: Contact[]; onClose: () => void; onSaved: (o: Opportunity) => void; }
-const EditOpportunityModal = ({ opportunity, contacts, onClose, onSaved }: EditOpportunityModalProps) => {
+interface EditOpportunityModalProps { opportunity: Opportunity; contacts: Contact[]; pipelineStageNames: string[]; onClose: () => void; onSaved: (o: Opportunity) => void; }
+const EditOpportunityModal = ({ opportunity, contacts, pipelineStageNames, onClose, onSaved }: EditOpportunityModalProps) => {
   const [form, setForm] = useState({
     name: opportunity.name,
     stage: opportunity.stage,
@@ -295,6 +300,10 @@ const EditOpportunityModal = ({ opportunity, contacts, onClose, onSaved }: EditO
   });
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
+  const stageOptions = [
+    ...pipelineStageNames,
+    ...(form.stage && !pipelineStageNames.includes(form.stage) ? [form.stage] : []),
+  ];
 
   const save = async () => {
     if (!form.name.trim()) return;
@@ -319,7 +328,7 @@ const EditOpportunityModal = ({ opportunity, contacts, onClose, onSaved }: EditO
       <Field label="שם הזדמנות *"><input style={inputStyle} value={form.name} onChange={e => set('name', e.target.value)} /></Field>
       <Field label="שלב">
         <select style={selectStyle} value={form.stage} onChange={e => set('stage', e.target.value)}>
-          {STAGES.map(s => <option key={s}>{s}</option>)}
+          {stageOptions.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
       </Field>
       <Field label="איש קשר">
@@ -447,8 +456,8 @@ const EditActivityModal = ({ activity, contacts, opportunities, onClose, onSaved
 };
 
 // EditInstitution Modal
-interface EditInstitutionModalProps { institution: Institution; onClose: () => void; onSaved: (updated: Partial<Institution>) => void; }
-const EditInstitutionModal = ({ institution, onClose, onSaved }: EditInstitutionModalProps) => {
+interface EditInstitutionModalProps { institution: Institution; pipelineStageNames: string[]; onClose: () => void; onSaved: (updated: Partial<Institution>) => void; }
+const EditInstitutionModal = ({ institution, pipelineStageNames, onClose, onSaved }: EditInstitutionModalProps) => {
   const [form, setForm] = useState({
     crm_class: institution.crm_class ?? '',
     crm_stage: institution.crm_stage ?? '',
@@ -463,6 +472,10 @@ const EditInstitutionModal = ({ institution, onClose, onSaved }: EditInstitution
   });
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
+  const stageOptions = [
+    ...pipelineStageNames,
+    ...(form.crm_stage && !pipelineStageNames.includes(form.crm_stage) ? [form.crm_stage] : []),
+  ];
 
   const save = async () => {
     setSaving(true);
@@ -502,7 +515,7 @@ const EditInstitutionModal = ({ institution, onClose, onSaved }: EditInstitution
         <Field label="שלב">
           <select style={selectStyle} value={form.crm_stage} onChange={e => set('crm_stage', e.target.value)}>
             <option value="">— בחר —</option>
-            {STAGES.map(s => <option key={s}>{s}</option>)}
+            {stageOptions.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </Field>
         <Field label="סיכון">
@@ -1160,6 +1173,7 @@ const CRMInstitution = () => {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [pipelineStageNames, setPipelineStageNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [showAddContact, setShowAddContact] = useState(false);
@@ -1171,6 +1185,20 @@ const CRMInstitution = () => {
   const [showEdit, setShowEdit] = useState(false);
   const [showWhatsApp, setShowWhatsApp] = useState(false);
   const [showEmail, setShowEmail] = useState(false);
+
+  useEffect(() => {
+    supabase
+      .from('crm_pipeline_stages')
+      .select('name')
+      .order('order_index')
+      .then(({ data }) => {
+        setPipelineStageNames(
+          (data ?? [])
+            .map((stage: { name: string }) => stage.name?.trim())
+            .filter((name): name is string => Boolean(name)),
+        );
+      });
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -1232,14 +1260,14 @@ const CRMInstitution = () => {
       {/* Modals */}
       {showAddContact && id && <AddContactModal institutionId={id} onClose={() => setShowAddContact(false)} onSaved={c => { setContacts(p => [c, ...p]); setShowAddContact(false); }} />}
       {editContact && <EditContactModal contact={editContact} onClose={() => setEditContact(null)} onSaved={c => { setContacts(p => p.map(x => x.id === c.id ? c : x)); setEditContact(null); }} />}
-      {showAddOpportunity && id && <AddOpportunityModal institutionId={id} contacts={contacts} onClose={() => setShowAddOpportunity(false)} onSaved={o => {
+      {showAddOpportunity && id && <AddOpportunityModal institutionId={id} contacts={contacts} pipelineStageNames={pipelineStageNames} onClose={() => setShowAddOpportunity(false)} onSaved={o => {
         const newOpps = [o, ...opportunities];
         setOpportunities(newOpps);
         const maxVal = newOpps.map(op => op.value).filter((v): v is number => v != null).reduce((a, b) => Math.max(a, b), 0) || null;
         setInstitution(p => p ? { ...p, crm_potential: maxVal } : p);
         setShowAddOpportunity(false);
       }} />}
-      {editOpportunity && <EditOpportunityModal opportunity={editOpportunity} contacts={contacts} onClose={() => setEditOpportunity(null)} onSaved={o => {
+      {editOpportunity && <EditOpportunityModal opportunity={editOpportunity} contacts={contacts} pipelineStageNames={pipelineStageNames} onClose={() => setEditOpportunity(null)} onSaved={o => {
         const newOpps = opportunities.map(x => x.id === o.id ? o : x);
         setOpportunities(newOpps);
         const maxVal = newOpps.map(op => op.value).filter((v): v is number => v != null).reduce((a, b) => Math.max(a, b), 0) || null;
@@ -1256,7 +1284,7 @@ const CRMInstitution = () => {
         if (a.next_step) setInstitution(p => p ? { ...p, crm_next_step: a.next_step, crm_next_step_date: a.next_step_date } : p);
         setEditActivity(null);
       }} />}
-      {showEdit && <EditInstitutionModal institution={institution} onClose={() => setShowEdit(false)} onSaved={patch => { setInstitution(p => p ? { ...p, ...patch } : p); setShowEdit(false); }} />}
+      {showEdit && <EditInstitutionModal institution={institution} pipelineStageNames={pipelineStageNames} onClose={() => setShowEdit(false)} onSaved={patch => { setInstitution(p => p ? { ...p, ...patch } : p); setShowEdit(false); }} />}
       {showWhatsApp && id && <SendWhatsAppModal contacts={contacts} institutionName={institution.name} institutionId={id} onClose={() => setShowWhatsApp(false)} onSent={a => { setActivities(p => [a, ...p]); setShowWhatsApp(false); }} />}
       {showEmail && id && <SendEmailModal contacts={contacts} institutionName={institution.name} institutionId={id} onClose={() => setShowEmail(false)} onSent={a => { setActivities(p => [a, ...p]); setShowEmail(false); }} />}
 

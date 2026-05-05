@@ -196,20 +196,68 @@ function EditStagesModal({ stages, onClose, onSaved }: { stages: PipelineStage[]
     setSaving(true);
     setError(null);
 
-    const upsertData = local.map((s, i) => ({
-      ...(s.id.startsWith('new_') ? {} : { id: s.id }),
+    const existingStages = local
+      .map((s, i) => ({ stage: s, order_index: i }))
+      .filter(({ stage }) => !stage.id.startsWith('new_'))
+      .map(({ stage: s, order_index }) => ({
+        id: s.id,
+        name: s.name.trim(),
+        color: s.color,
+        order_index,
+        is_won: s.is_won,
+        is_lost: s.is_lost,
+      }));
+
+    const originalStageNamesById = new Map(stages.map((s) => [s.id, s.name]));
+    const renamedStages = existingStages.filter((stage) => {
+      const originalName = originalStageNamesById.get(stage.id);
+      return originalName !== undefined && originalName !== stage.name;
+    });
+
+    const newStages = local
+      .map((s, i) => ({ stage: s, order_index: i }))
+      .filter(({ stage }) => stage.id.startsWith('new_'))
+      .map(({ stage: s, order_index }) => ({
       name: s.name.trim(),
       color: s.color,
-      order_index: i,
+      order_index,
       is_won: s.is_won,
       is_lost: s.is_lost,
     }));
 
-    const { error: uErr } = await supabase.from('crm_pipeline_stages').upsert(upsertData);
-    if (uErr) { setError(uErr.message); setSaving(false); return; }
+    for (const stage of renamedStages) {
+      const payload = {
+        p_stage_id: stage.id,
+        p_new_name: stage.name,
+      };
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('rename_crm_pipeline_stage', payload);
+      if (rpcErr) {
+        console.error('[CRM Pipeline] rename_crm_pipeline_stage failed', rpcErr);
+        setError(rpcErr.message);
+        setSaving(false);
+        return;
+      }
+    }
 
-    if (deletedIds.length > 0) {
-      await supabase.from('crm_pipeline_stages').delete().in('id', deletedIds);
+    if (existingStages.length > 0) {
+      const { error: uErr } = await supabase.from('crm_pipeline_stages').upsert(existingStages);
+      if (uErr) { setError(uErr.message); setSaving(false); return; }
+    }
+
+    if (newStages.length > 0) {
+      const { error: iErr } = await supabase.from('crm_pipeline_stages').insert(newStages);
+      if (iErr) { setError(iErr.message); setSaving(false); return; }
+    }
+
+    for (const id of deletedIds) {
+      const { error: deleteErr } = await supabase.rpc('delete_crm_pipeline_stage', {
+        p_stage_id: id,
+      });
+      if (deleteErr) {
+        setError('לא ניתן למחוק שלב שנמצא בשימוש. העבר קודם את הרשומות, התבניות וחוקי האוטומציה לשלב אחר.');
+        setSaving(false);
+        return;
+      }
     }
 
     setSaving(false);
@@ -298,8 +346,6 @@ interface AutomationRule {
 interface MessageTemplate { id: string; name: string; channel: string; stage: string | null; }
 interface RuleFormState { trigger_type: TriggerType; trigger_value: string; channel: Channel; template_id: string; delay_minutes: number; is_active: boolean; }
 
-const PIPELINE_STAGES_FOR_RULES = ['יצירת קשר', 'מעוניין', 'סגירה', 'זכה', 'הפסיד'];
-
 function getTriggerLabel(rule: AutomationRule): string {
   if (rule.trigger_type === 'stage_enter') return `כניסה לשלב: ${rule.trigger_value ?? ''}`;
   if (rule.trigger_type === 'no_contact') return `ללא קשר ${rule.trigger_value ?? ''} ימים`;
@@ -309,9 +355,10 @@ function getDelayLabel(minutes: number): string {
   return DELAY_OPTIONS.find((o) => o.value === minutes)?.label ?? `אחרי ${minutes} דקות`;
 }
 
-function EditRuleModal({ rule, templates, onClose, onSaved, currentUserId }: { rule: AutomationRule | null; templates: MessageTemplate[]; onClose: () => void; onSaved: () => void; currentUserId: string | undefined }) {
+function EditRuleModal({ rule, templates, stageNames, onClose, onSaved, currentUserId }: { rule: AutomationRule | null; templates: MessageTemplate[]; stageNames: string[]; onClose: () => void; onSaved: () => void; currentUserId: string | undefined }) {
   const isNew = rule === null;
-  const [form, setForm] = useState<RuleFormState>({ trigger_type: rule?.trigger_type ?? 'stage_enter', trigger_value: rule?.trigger_value ?? PIPELINE_STAGES_FOR_RULES[0], channel: rule?.channel ?? 'whatsapp', template_id: rule?.template_id ?? '', delay_minutes: rule?.delay_minutes ?? 0, is_active: rule?.is_active ?? true });
+  const defaultStageName = stageNames[0] ?? '';
+  const [form, setForm] = useState<RuleFormState>({ trigger_type: rule?.trigger_type ?? 'stage_enter', trigger_value: rule?.trigger_value ?? defaultStageName, channel: rule?.channel ?? 'whatsapp', template_id: rule?.template_id ?? '', delay_minutes: rule?.delay_minutes ?? 0, is_active: rule?.is_active ?? true });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const set = <K extends keyof RuleFormState>(k: K, v: RuleFormState[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -345,13 +392,13 @@ function EditRuleModal({ rule, templates, onClose, onSaved, currentUserId }: { r
         <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 5 }}>טריגר</label>
-            <select value={form.trigger_type} onChange={(e) => { const tt = e.target.value as TriggerType; set('trigger_type', tt); set('trigger_value', tt === 'stage_enter' ? PIPELINE_STAGES_FOR_RULES[0] : tt === 'no_contact' ? '7' : ''); }} style={inputStyle}>
+            <select value={form.trigger_type} onChange={(e) => { const tt = e.target.value as TriggerType; set('trigger_type', tt); set('trigger_value', tt === 'stage_enter' ? defaultStageName : tt === 'no_contact' ? '7' : ''); }} style={inputStyle}>
               <option value="stage_enter">כניסה לשלב</option>
               <option value="no_contact">ללא קשר X ימים</option>
               <option value="deal_won">זכייה בעסקה</option>
             </select>
           </div>
-          {form.trigger_type === 'stage_enter' && <div><label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 5 }}>שלב</label><select value={form.trigger_value} onChange={(e) => set('trigger_value', e.target.value)} style={inputStyle}>{PIPELINE_STAGES_FOR_RULES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>}
+          {form.trigger_type === 'stage_enter' && <div><label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 5 }}>שלב</label><select value={form.trigger_value} onChange={(e) => set('trigger_value', e.target.value)} style={inputStyle}>{stageNames.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>}
           {form.trigger_type === 'no_contact' && <div><label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 5 }}>מספר ימים</label><select value={form.trigger_value} onChange={(e) => set('trigger_value', e.target.value)} style={inputStyle}>{NO_CONTACT_DAYS.map((d) => <option key={d} value={d}>{d} ימים</option>)}</select></div>}
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 5 }}>ערוץ</label>
@@ -388,7 +435,7 @@ function EditRuleModal({ rule, templates, onClose, onSaved, currentUserId }: { r
   );
 }
 
-function AutomationRulesSection({ currentUserId }: { currentUserId: string | undefined }) {
+function AutomationRulesSection({ currentUserId, stageNames }: { currentUserId: string | undefined; stageNames: string[] }) {
   const [rules, setRules] = useState<AutomationRule[]>([]);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [expanded, setExpanded] = useState(false);
@@ -407,7 +454,9 @@ function AutomationRulesSection({ currentUserId }: { currentUserId: string | und
     setLoadingRules(false);
   }, []);
 
-  useEffect(() => { loadRules(); }, [loadRules]);
+  const stageNamesKey = stageNames.join('\u001f');
+
+  useEffect(() => { loadRules(); }, [loadRules, stageNamesKey]);
 
   const toggleActive = async (rule: AutomationRule) => {
     setRules((prev) => prev.map((r) => r.id === rule.id ? { ...r, is_active: !r.is_active } : r));
@@ -418,7 +467,7 @@ function AutomationRulesSection({ currentUserId }: { currentUserId: string | und
 
   return (
     <>
-      {showModal && <EditRuleModal rule={editRule} templates={templates} onClose={() => setShowModal(false)} onSaved={loadRules} currentUserId={currentUserId} />}
+      {showModal && <EditRuleModal rule={editRule} templates={templates} stageNames={stageNames} onClose={() => setShowModal(false)} onSaved={loadRules} currentUserId={currentUserId} />}
       <div style={{ background: '#fff', border: '1px solid #E4E7ED', borderRadius: 10, marginBottom: 20, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', cursor: 'pointer', userSelect: 'none' }} onClick={() => setExpanded((v) => !v)}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -502,6 +551,7 @@ export default function CRMPipeline() {
         id, name, city, crm_stage, crm_class, crm_last_contact_at, crm_potential,
         instructor:crm_assigned_instructor_id (id, full_name)
       `)
+      .eq('is_deleted', false)
       .in('crm_class', ['Lead', 'Customer'])
       .order('name');
 
@@ -554,7 +604,7 @@ export default function CRMPipeline() {
     }).catch(() => { /* fire-and-forget */ });
   }
 
-  const firstStageName = stages[0]?.name ?? '';
+  const validStageNames = new Set(stages.map((s) => s.name));
 
   const filtered = institutions.filter((r) => {
     if (filterInstructor && r.instructor?.id !== filterInstructor) return false;
@@ -563,7 +613,14 @@ export default function CRMPipeline() {
   });
 
   const byStage = (stageName: string, isFirst: boolean) =>
-    filtered.filter((r) => isFirst ? (r.crm_stage === stageName || r.crm_stage === null) : r.crm_stage === stageName);
+    filtered.filter((r) => {
+      const assignedStage = r.crm_stage?.trim() ?? '';
+      const hasValidStage = assignedStage !== '' && validStageNames.has(assignedStage);
+
+      if (isFirst) return !hasValidStage || assignedStage === stageName;
+
+      return assignedStage === stageName;
+    });
 
   return (
     <div dir="rtl" style={{ padding: '24px', background: '#F8F9FB', minHeight: '100%' }}>
@@ -571,13 +628,13 @@ export default function CRMPipeline() {
         <EditStagesModal
           stages={stages}
           onClose={() => setShowEditStages(false)}
-          onSaved={() => { loadStages(); }}
+          onSaved={() => { loadStages(); load(); }}
         />
       )}
 
       <KpiStrip kpis={kpis} />
 
-      <AutomationRulesSection currentUserId={user?.id} />
+      <AutomationRulesSection currentUserId={user?.id} stageNames={stages.map((stage) => stage.name)} />
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>

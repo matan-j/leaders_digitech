@@ -5,8 +5,9 @@ import { useAuth } from '@/components/auth/AuthProvider';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Stage = 'יצירת קשר' | 'מעוניין' | 'סגירה' | 'זכה' | 'הפסיד';
+type Stage = string;
 type Channel = 'whatsapp' | 'email';
+type StageTexts = Record<Stage, Record<Channel, string>>;
 
 interface Template {
   id: string;
@@ -17,6 +18,10 @@ interface Template {
   subject: string | null;
   variables: string[];
   created_by: string | null;
+}
+
+interface PipelineStageOption {
+  name: string | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -33,9 +38,7 @@ const C = {
   purple: '#7C3AED', purpleBg: '#EDE9FE',
 };
 
-const STAGES: Stage[] = ['יצירת קשר', 'מעוניין', 'סגירה', 'זכה', 'הפסיד'];
-
-const STAGE_COLOR: Record<Stage, string> = {
+const STAGE_COLOR: Record<string, string> = {
   'יצירת קשר': '#6B7280',
   'מעוניין': '#3B5BDB',
   'סגירה': '#D97706',
@@ -43,7 +46,7 @@ const STAGE_COLOR: Record<Stage, string> = {
   'הפסיד': '#DC2626',
 };
 
-const STAGE_TIPS: Record<Stage, string> = {
+const STAGE_TIPS: Record<string, string> = {
   'יצירת קשר': 'שמור על טון חם ואישי. הכנס שם מוסד ספציפי.',
   'מעוניין': 'הזכר מה דיברתם. הצמד קישור להצעה.',
   'סגירה': 'צור urgency עדינה עם תאריך יעד ברור.',
@@ -51,7 +54,7 @@ const STAGE_TIPS: Record<Stage, string> = {
   'הפסיד': 'השאר דלת פתוחה. אל תלחץ.',
 };
 
-const DEFAULTS: Record<Stage, Record<Channel, string>> = {
+const DEFAULTS: StageTexts = {
   'יצירת קשר': {
     whatsapp: 'שלום [שם] 👋\nאני [שם_שולח] מדיגי-טק.\nשמחתי להכיר את [שם_מוסד] — רצינו לשתף אתכם בתוכניות AI לתלמידים.\nניתן לקבוע שיחת היכרות קצרה? 🙏',
     email: 'שלום [שם],\n\nאני [שם_שולח] מדיגי-טק — חברה המתמחה בתוכניות AI ומיומנויות דיגיטל לבתי ספר.\n\nשמחתי להכיר את [שם_מוסד] ואשמח לתאם שיחה קצרה של 15 דקות.\n\nבברכה,\n[שם_שולח] | דיגי-טק',
@@ -74,6 +77,12 @@ const DEFAULTS: Record<Stage, Record<Channel, string>> = {
   },
 };
 
+const emptyTexts = (): Record<Channel, string> => ({ whatsapp: '', email: '' });
+const cloneDefaultTexts = (): StageTexts => JSON.parse(JSON.stringify(DEFAULTS));
+const getDefaultText = (stage: Stage, channel: Channel) => DEFAULTS[stage]?.[channel] ?? '';
+const getStageColor = (stage: Stage) => STAGE_COLOR[stage] ?? C.accent;
+const getStageTip = (stage: Stage) => STAGE_TIPS[stage] ?? 'התאם את הטון לשלב הנוכחי ושמור על הודעה קצרה וברורה.';
+
 const VARS = [
   { v: '[שם]', l: 'שם איש קשר' },
   { v: '[שם_מוסד]', l: 'שם מוסד' },
@@ -90,11 +99,11 @@ export default function CRMMessagesEditor() {
   const { user } = useAuth();
 
   // ── Stage-mode state ──
-  const [stage, setStage] = useState<Stage>('יצירת קשר');
+  const [pipelineStageNames, setPipelineStageNames] = useState<string[]>([]);
+  const [templateStageNames, setTemplateStageNames] = useState<string[]>([]);
+  const [stage, setStage] = useState<Stage>('');
   const [channel, setChannel] = useState<Channel>('whatsapp');
-  const [texts, setTexts] = useState<Record<Stage, Record<Channel, string>>>(
-    JSON.parse(JSON.stringify(DEFAULTS))
-  );
+  const [texts, setTexts] = useState<StageTexts>(() => cloneDefaultTexts());
   const [templateIds, setTemplateIds] = useState<Partial<Record<string, string>>>({});
   const [hasTemplate, setHasTemplate] = useState<Partial<Record<string, boolean>>>({});
   const [saveState, setSaveState] = useState<Partial<Record<string, 'saved' | 'dirty'>>>({});
@@ -118,11 +127,16 @@ export default function CRMMessagesEditor() {
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   const key = (s: Stage, c: Channel) => `${s}__${c}`;
+  const stageOptions = [
+    ...pipelineStageNames,
+    ...templateStageNames.filter((s) => !pipelineStageNames.includes(s)),
+  ];
 
   // ── Derived values ──
-  const txt = texts[stage][channel];
+  const txt = stage ? texts[stage]?.[channel] ?? getDefaultText(stage, channel) : '';
   const setTxt = (v: string) => {
-    setTexts(p => ({ ...p, [stage]: { ...p[stage], [channel]: v } }));
+    if (!stage) return;
+    setTexts(p => ({ ...p, [stage]: { ...(p[stage] ?? emptyTexts()), [channel]: v } }));
     setSaveState(p => ({ ...p, [key(stage, channel)]: 'dirty' }));
   };
 
@@ -138,8 +152,23 @@ export default function CRMMessagesEditor() {
     }
   };
 
-  const isEdited = mode === 'stage' && txt !== DEFAULTS[stage][channel];
+  const isEdited = mode === 'stage' && !!stage && txt !== getDefaultText(stage, channel);
   const savedKey = mode === 'stage' ? saveState[key(stage, channel)] : freeSaveState;
+
+  const loadPipelineStages = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('crm_pipeline_stages')
+      .select('name')
+      .order('order_index');
+
+    if (!error && data) {
+      setPipelineStageNames(
+        (data as PipelineStageOption[])
+          .map((s) => s.name?.trim())
+          .filter(Boolean) as string[]
+      );
+    }
+  }, []);
 
   // ── Load free templates ──
   const loadFreeTemplates = useCallback(async () => {
@@ -158,13 +187,16 @@ export default function CRMMessagesEditor() {
         .from('crm_message_templates')
         .select('id, stage, channel, body, subject, name, variables, created_by');
       if (!data) return;
-      const newTexts = JSON.parse(JSON.stringify(DEFAULTS)) as typeof texts;
+      const newTexts = cloneDefaultTexts();
       const newIds: Partial<Record<string, string>> = {};
       const newHas: Partial<Record<string, boolean>> = {};
+      const stagesFromTemplates = new Set<string>();
       for (const tpl of data as Template[]) {
         const s = tpl.stage as Stage | null;
         const c = tpl.channel as Channel;
-        if (s && STAGES.includes(s)) {
+        if (s) {
+          stagesFromTemplates.add(s);
+          newTexts[s] = newTexts[s] ?? emptyTexts();
           newTexts[s][c] = tpl.body;
           newIds[key(s, c)] = tpl.id;
           newHas[key(s, c)] = true;
@@ -173,10 +205,18 @@ export default function CRMMessagesEditor() {
       setTexts(newTexts);
       setTemplateIds(newIds);
       setHasTemplate(newHas);
+      setTemplateStageNames([...stagesFromTemplates]);
     }
+    loadPipelineStages();
     loadAll();
     loadFreeTemplates();
-  }, [loadFreeTemplates]);
+  }, [loadFreeTemplates, loadPipelineStages]);
+
+  useEffect(() => {
+    if (!stage && stageOptions.length > 0) {
+      setStage(stageOptions[0]);
+    }
+  }, [stage, stageOptions]);
 
   // ── Free template actions ──
   const selectFreeTemplate = (tpl: Template) => {
@@ -254,7 +294,7 @@ export default function CRMMessagesEditor() {
     .replace(/\[תוכנית\]/g, 'Creators AI');
 
   const generateAI = async () => {
-    if (mode === 'free') return;
+    if (mode === 'free' || !stage) return;
     setGenning(true);
     try {
       const result = await callCrmAI('generate_template', { stage, channel });
@@ -267,6 +307,7 @@ export default function CRMMessagesEditor() {
 
   const doSave = async () => {
     if (mode === 'free') { await doSaveFree(); return; }
+    if (!stage) return;
     const existingId = templateIds[key(stage, channel)];
     const payload = {
       name: `${stage} — ${channel === 'whatsapp' ? 'וואטסאפ' : 'מייל'}`,
@@ -310,8 +351,14 @@ export default function CRMMessagesEditor() {
             שלב בפייפליין
           </div>
 
-          {STAGES.map(s => {
-            const color = STAGE_COLOR[s];
+          {stageOptions.length === 0 && (
+            <div style={{ padding: '14px', fontSize: 12, color: C.textDim, borderBottom: `1px solid ${C.borderLight}` }}>
+              אין שלבים להצגה
+            </div>
+          )}
+
+          {stageOptions.map(s => {
+            const color = getStageColor(s);
             const waHas = !!hasTemplate[key(s, 'whatsapp')];
             const emHas = !!hasTemplate[key(s, 'email')];
             const active = mode === 'stage' && stage === s;
@@ -589,7 +636,7 @@ export default function CRMMessagesEditor() {
                 <div style={{ flex: 1 }} />
                 {isEdited && mode === 'stage' && (
                   <button
-                    onClick={() => setCurrentText(DEFAULTS[stage][channel])}
+                    onClick={() => setCurrentText(getDefaultText(stage, channel))}
                     style={{ padding: '5px 11px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surface, fontSize: 12, cursor: 'pointer', color: C.textSub, fontWeight: 600 }}
                   >
                     ↩ אפס
@@ -630,7 +677,7 @@ export default function CRMMessagesEditor() {
                 {mode === 'stage' && (
                   <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 8, background: C.aiBg, border: `1px solid ${C.ai}20` }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: C.ai, marginBottom: 5 }}>💡 טיפ לשלב זה</div>
-                    <div style={{ fontSize: 11, color: C.text, lineHeight: 1.5 }}>{STAGE_TIPS[stage]}</div>
+                    <div style={{ fontSize: 11, color: C.text, lineHeight: 1.5 }}>{getStageTip(stage)}</div>
                   </div>
                 )}
               </div>

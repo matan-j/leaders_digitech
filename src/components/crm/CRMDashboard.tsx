@@ -83,6 +83,13 @@ interface HotLead {
   instructor: { full_name: string } | null;
 }
 
+interface PipelineStage {
+  name: string;
+  order_index: number;
+  is_won: boolean;
+  is_lost: boolean;
+}
+
 // ── AI section types ──────────────────────────────────────────
 
 interface AISection {
@@ -158,7 +165,7 @@ const CRMDashboard = ({ setTab, onOpenCsvImport }: Props) => {
     const load = async () => {
       setLoadingKpis(true);
       try {
-        const [instRes, oppRes, followRes] = await Promise.all([
+        const [instRes, oppRes, followRes, stageRes] = await Promise.all([
           supabase
             .from('educational_institutions')
             .select('crm_class, crm_stage'),
@@ -170,11 +177,19 @@ const CRMDashboard = ({ setTab, onOpenCsvImport }: Props) => {
             .from('crm_followups')
             .select('due_date, status')
             .eq('status', 'pending'),
+          supabase
+            .from('crm_pipeline_stages')
+            .select('name, order_index, is_won, is_lost')
+            .order('order_index'),
         ]);
 
         const insts = instRes.data ?? [];
         const opps = oppRes.data ?? [];
         const followups = followRes.data ?? [];
+        const stages = (stageRes.data ?? []) as PipelineStage[];
+        const defaultStageName = stages[0]?.name;
+        const wonStageNames = new Set(stages.filter((s) => s.is_won).map((s) => s.name));
+        const lostStageNames = new Set(stages.filter((s) => s.is_lost).map((s) => s.name));
 
         const today = new Date().toISOString().split('T')[0];
         const overdue = followups.filter(
@@ -187,8 +202,8 @@ const CRMDashboard = ({ setTab, onOpenCsvImport }: Props) => {
         );
 
         setKpis({
-          newLeads: insts.filter((i) => i.crm_class === 'Lead' && i.crm_stage === 'יצירת קשר').length,
-          inProgress: insts.filter((i) => i.crm_stage && !['זכה', 'הפסיד'].includes(i.crm_stage)).length,
+          newLeads: insts.filter((i) => i.crm_class === 'Lead' && i.crm_stage === defaultStageName).length,
+          inProgress: insts.filter((i) => i.crm_stage && !wonStageNames.has(i.crm_stage) && !lostStageNames.has(i.crm_stage)).length,
           activeCustomers: insts.filter((i) => i.crm_class === 'Customer').length,
           openPotential: Math.round(totalPotential / 1000),
           openOpportunities: opps.length,

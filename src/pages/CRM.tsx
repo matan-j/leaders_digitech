@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import CRMDashboard from '@/components/crm/CRMDashboard';
 import CRMInstitutionsList from '@/components/crm/CRMInstitutionsList';
@@ -33,11 +33,28 @@ const NAV_TABS: { id: CRMTab; label: string }[] = [
   { id: 'broadcast', label: 'שליחה בקבוצות' },
 ];
 
+const CRM_TAB_KEYS = NAV_TABS.map((tab) => tab.id);
+
+const parseCRMTab = (tabParam: string | null): CRMTab => {
+  if (CRM_TAB_KEYS.includes(tabParam as CRMTab)) return tabParam as CRMTab;
+  return TAB_FROM_LABEL[tabParam ?? ''] ?? 'dashboard';
+};
+
 const CRM = () => {
-  const [searchParams] = useSearchParams();
-  const initialTab = TAB_FROM_LABEL[searchParams.get('tab') ?? ''] ?? 'dashboard';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = parseCRMTab(searchParams.get('tab'));
   const [activeTab, setActiveTab] = useState<CRMTab>(initialTab);
   const [openCsvImport, setOpenCsvImport] = useState(false);
+  const currentTab = parseCRMTab(searchParams.get('tab'));
+
+  useEffect(() => {
+    setActiveTab(currentTab);
+  }, [currentTab]);
+
+  const handleTabChange = (tab: CRMTab) => {
+    setActiveTab(tab);
+    setSearchParams({ tab });
+  };
 
   return (
     <div dir="rtl" className="min-h-screen" style={{ background: '#F8F9FB' }}>
@@ -54,7 +71,7 @@ const CRM = () => {
         {NAV_TABS.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => handleTabChange(tab.id)}
             style={{
               padding: '10px 18px',
               fontSize: 13,
@@ -75,9 +92,9 @@ const CRM = () => {
 
       {/* Tab content */}
       <div>
-        {activeTab === 'dashboard' && <CRMDashboard setTab={setActiveTab} onOpenCsvImport={() => { setOpenCsvImport(true); setActiveTab('leads'); }} />}
-        {activeTab === 'leads'     && <CRMInstitutionsList setTab={setActiveTab} mode="leads" openCsvImport={openCsvImport} />}
-        {activeTab === 'customers' && <CRMInstitutionsList setTab={setActiveTab} mode="customers" />}
+        {activeTab === 'dashboard' && <CRMDashboard setTab={handleTabChange} onOpenCsvImport={() => { setOpenCsvImport(true); handleTabChange('leads'); }} />}
+        {activeTab === 'leads'     && <CRMInstitutionsList setTab={handleTabChange} mode="leads" openCsvImport={openCsvImport} />}
+        {activeTab === 'customers' && <CRMInstitutionsList setTab={handleTabChange} mode="customers" />}
         {activeTab === 'pipeline'  && <CRMPipeline />}
         {activeTab === 'messages'  && <CRMMessagesEditor />}
         {activeTab === 'broadcast' && <CRMBroadcast />}

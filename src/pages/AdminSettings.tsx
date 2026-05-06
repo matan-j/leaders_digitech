@@ -169,6 +169,74 @@ const CRMSettingsTab = () => {
   );
 };
 
+// Tiny admin-only utility: triggers the daily-telegram-report Edge Function
+// in manual mode (skips the 15:00 Israel-time guard) so admins can preview the
+// message and verify Telegram delivery before the next scheduled run.
+const TelegramReportTestCard = () => {
+  const [sending, setSending] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+
+  const invoke = async (dryRun: boolean) => {
+    const setLoading = dryRun ? setPreviewing : setSending;
+    setLoading(true);
+    setPreview(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('daily-telegram-report', {
+        body: { manual: true, dry_run: dryRun },
+      });
+      if (error) throw error;
+      if (dryRun) {
+        setPreview((data as any)?.message ?? '(אין תוכן)');
+        toast({ title: 'תצוגה מקדימה הוכנה', description: 'לא נשלח לטלגרם.' });
+      } else {
+        const sent = (data as any)?.sent;
+        toast({
+          title: sent ? 'הדוח נשלח לטלגרם ✓' : 'נכשלה השליחה',
+          description: sent ? '' : (data as any)?.telegram?.description ?? 'בדוק את ה-Function logs',
+          variant: sent ? 'default' : 'destructive',
+        });
+      }
+    } catch (e: any) {
+      toast({
+        title: 'שגיאה',
+        description: e?.message ?? String(e),
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card className="mt-6">
+      <CardHeader>
+        <CardTitle>דוח Telegram יומי</CardTitle>
+        <CardDescription>
+          שלח דוח ביצוע יומי ל-CEO באופן ידני (עוקף את התזמון של 15:00). שימושי לבדיקה ולתצוגה מקדימה.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => invoke(false)} disabled={sending || previewing}>
+            {sending ? <Loader2 className="h-4 w-4 ml-2 animate-spin" /> : null}
+            שלח לטלגרם עכשיו
+          </Button>
+          <Button variant="outline" onClick={() => invoke(true)} disabled={sending || previewing}>
+            {previewing ? <Loader2 className="h-4 w-4 ml-2 animate-spin" /> : null}
+            תצוגה מקדימה (ללא שליחה)
+          </Button>
+        </div>
+        {preview && (
+          <div className="rounded-md border bg-gray-50 p-4 text-sm whitespace-pre-wrap text-right" dir="rtl">
+            {preview.replace(/<[^>]+>/g, '')}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
 const AdminSettings = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('defaults');
@@ -1021,6 +1089,8 @@ const getRoleBadge = (role: string) => {
                 </div>
               </CardContent>
             </Card>
+
+            {isAdmin && <TelegramReportTestCard />}
           </TabsContent>
 
           {/* מוסדות חינוך */}

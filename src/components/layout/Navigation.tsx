@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
-import { BookOpen, Calendar, FileText, Users, BarChart3, LogOut, Menu, X, User, Settings2Icon, Briefcase } from 'lucide-react';
+import { BookOpen, Calendar, FileText, Users, BarChart3, LogOut, Menu, X, User, Settings2Icon, Briefcase, FolderKanban } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import Profile from '@/pages/Profile';
 import { toast } from 'sonner';
@@ -106,6 +106,7 @@ const navigationItems = [
   { path: '/course-assignments', label: 'הקצאות קורסים', icon: Users },
   isAdmin && { path: '/reports', label: 'דוחות ושכר', icon: BarChart3 },
   isCrmUser && { path: '/crm', label: 'CRM', icon: Briefcase },
+  { path: '/tasks', label: 'פרויקטים', icon: FolderKanban },
   { path: '/rewards', label: 'תגמולים', icon: BarChart3 },
   { path: '/profile', label: 'פרופיל', icon: User },
    isAdminOrManager && { path: '/AdminSettings', label: 'הגדרות מנהל ', icon: Settings2Icon },

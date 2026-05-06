@@ -22,6 +22,7 @@ import AdminSettings from "./pages/AdminSettings";
 import ResetPassword from "./components/ResetPassword";
 import CRM from "./pages/CRM";
 import CRMInstitution from "./pages/CRMInstitution";
+import Tasks from "./pages/Tasks";
 
 const queryClient = new QueryClient();
 
@@ -169,6 +170,17 @@ const App = () => (
                     <div className="min-h-screen">
                       <Navigation />
                       <CRMInstitution />
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/tasks"
+                element={
+                  <ProtectedRoute>
+                    <div className="min-h-screen">
+                      <Navigation />
+                      <Tasks />
                     </div>
                   </ProtectedRoute>
                 }

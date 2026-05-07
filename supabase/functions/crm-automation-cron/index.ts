@@ -9,6 +9,21 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
+async function invokeCrmGhl(
+  supabase: ReturnType<typeof createClient>,
+  body: Record<string, unknown>,
+): Promise<string | null> {
+  const { data, error } = await supabase.functions.invoke('crm-ghl', { body })
+  if (error) throw error
+
+  const response = data as { ok?: boolean; error?: string; data?: { communication_id?: string | null } } | null
+  if (!response?.ok) {
+    throw new Error(response?.error ?? 'crm-ghl send failed')
+  }
+
+  return response.data?.communication_id ?? null
+}
+
 function replaceVariables(body: string, vars: Record<string, string>): string {
   return body
     .replace(/\[שם\]/g, vars.contactName ?? '')
@@ -16,6 +31,12 @@ function replaceVariables(body: string, vars: Record<string, string>): string {
     .replace(/\[שם_שולח\]/g, vars.senderName ?? 'Leaders')
     .replace(/\[תאריך\]/g, vars.date ?? new Date().toLocaleDateString('he-IL'))
     .replace(/\[תוכנית\]/g, vars.program ?? '')
+    .replace(/\{\{שם\}\}/g, vars.contactName ?? '')
+    .replace(/\{\{שם_מוסד\}\}/g, vars.institutionName ?? '')
+    .replace(/\{\{מוסד\}\}/g, vars.institutionName ?? '')
+    .replace(/\{\{שם_שולח\}\}/g, vars.senderName ?? 'Leaders')
+    .replace(/\{\{תאריך\}\}/g, vars.date ?? new Date().toLocaleDateString('he-IL'))
+    .replace(/\{\{תוכנית\}\}/g, vars.program ?? '')
 }
 
 Deno.serve(async (req) => {
@@ -96,20 +117,38 @@ Deno.serve(async (req) => {
         const message = replaceVariables(tmpl.body, vars)
 
         try {
+          let communicationId: string | null = null
           if (rule.channel === 'whatsapp' && contact?.phone) {
-            await supabase.functions.invoke('crm-ghl', {
-              body: { action: 'send_whatsapp', payload: { phone: contact.phone, message, contactName: vars.contactName } },
+            communicationId = await invokeCrmGhl(supabase, {
+              action: 'send_whatsapp',
+              payload: {
+                  phone: contact.phone,
+                  message,
+                  contactName: vars.contactName,
+                  institution_id: inst.id,
+                  contact_id: contact.id,
+                  user_id: adminProfile?.id ?? null,
+                  template_id: rule.template_id,
+                  automation_rule_id: rule.id,
+                  skip_activity_log: true,
+                  require_communication_log: true,
+              },
             })
           } else if (rule.channel === 'email' && contact?.email) {
-            await supabase.functions.invoke('crm-ghl', {
-              body: {
-                action: 'send_email',
-                payload: {
+            communicationId = await invokeCrmGhl(supabase, {
+              action: 'send_email',
+              payload: {
                   email: contact.email,
                   subject: tmpl.subject ? replaceVariables(tmpl.subject, vars) : `תזכורת — ${inst.name}`,
                   body: message,
                   contactName: vars.contactName,
-                },
+                  institution_id: inst.id,
+                  contact_id: contact.id,
+                  user_id: adminProfile?.id ?? null,
+                  template_id: rule.template_id,
+                  automation_rule_id: rule.id,
+                  skip_activity_log: true,
+                  require_communication_log: true,
               },
             })
           } else {
@@ -117,13 +156,20 @@ Deno.serve(async (req) => {
           }
 
           if (adminProfile?.id) {
-            await supabase.from('crm_activities').insert({
+            const { data: activity } = await supabase.from('crm_activities').insert({
               institution_id: inst.id,
               user_id: adminProfile.id,
               type: rule.channel === 'whatsapp' ? 'וואטסאפ' : 'מייל',
               summary: `אוטומציה: ללא קשר ${days} ימים — נשלחה הודעה אוטומטית`,
               status: 'Completed',
-            })
+            }).select('id').single()
+
+            if (communicationId && activity?.id) {
+              await supabase
+                .from('crm_communications')
+                .update({ activity_id: activity.id })
+                .eq('id', communicationId)
+            }
           }
 
           fired++

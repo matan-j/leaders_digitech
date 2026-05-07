@@ -115,6 +115,17 @@ interface SystemUser {
   updated_at?: string;
 }
 
+interface CRMContactStatus {
+  id: string;
+  key: string;
+  label: string;
+  color: string;
+  order_index: number;
+  is_default: boolean;
+  is_active: boolean;
+  legacy_crm_risk: string | null;
+}
+
 interface Assignment {
   id: string;
   course_name: string;
@@ -126,19 +137,123 @@ interface Assignment {
 const CRMSettingsTab = () => {
   const { user } = useAuth();
   const [commission, setCommission] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [statuses, setStatuses] = useState<CRMContactStatus[]>([]);
+  const [savingCommission, setSavingCommission] = useState(false);
+  const [savingStatuses, setSavingStatuses] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    supabase.from('crm_settings').select('value').eq('key', 'instructor_commission').single()
-      .then(({ data }) => { if (data) setCommission(data.value ?? '0'); setLoaded(true); });
+    const load = async () => {
+      const [commissionRes, statusesRes] = await Promise.all([
+        supabase.from('crm_settings').select('value').eq('key', 'instructor_commission').single(),
+        supabase.from('crm_contact_statuses').select('*').order('order_index'),
+      ]);
+      if (commissionRes.data) setCommission(commissionRes.data.value ?? '0');
+      if (statusesRes.data) setStatuses(statusesRes.data as CRMContactStatus[]);
+      setLoaded(true);
+    };
+    load();
   }, []);
 
   const save = async () => {
-    setSaving(true);
+    setSavingCommission(true);
     await supabase.from('crm_settings')
       .upsert({ key: 'instructor_commission', value: commission, updated_by: user?.id, updated_at: new Date().toISOString() }, { onConflict: 'key' });
-    setSaving(false);
+    setSavingCommission(false);
+  };
+
+  const updateStatus = (id: string, patch: Partial<CRMContactStatus>) => {
+    setStatuses((prev) => prev.map((status) => status.id === id ? { ...status, ...patch } : status));
+  };
+
+  const addStatus = () => {
+    const id = `new_${Date.now()}`;
+    setStatuses((prev) => [
+      ...prev,
+      {
+        id,
+        key: id,
+        label: '',
+        color: '#6B7280',
+        order_index: prev.length,
+        is_default: false,
+        is_active: true,
+        legacy_crm_risk: null,
+      },
+    ]);
+  };
+
+  const moveStatus = (idx: number, dir: -1 | 1) => {
+    setStatuses((prev) => {
+      const nextIdx = idx + dir;
+      if (nextIdx < 0 || nextIdx >= prev.length) return prev;
+      const arr = [...prev];
+      [arr[idx], arr[nextIdx]] = [arr[nextIdx], arr[idx]];
+      return arr.map((status, order_index) => ({ ...status, order_index }));
+    });
+  };
+
+  const deactivateStatus = (id: string) => {
+    if (id.startsWith('new_')) {
+      setStatuses((prev) => prev.filter((status) => status.id !== id));
+      return;
+    }
+    updateStatus(id, { is_active: false });
+  };
+
+  const saveStatuses = async () => {
+    const ordered = statuses.map((status, order_index) => ({ ...status, order_index }));
+    if (ordered.some((status) => status.is_active && !status.label.trim())) {
+      toast({ title: 'יש למלא שם לכל סטטוס פעיל', variant: 'destructive' });
+      return;
+    }
+
+    setSavingStatuses(true);
+    try {
+      const existing = ordered.filter((status) => !status.id.startsWith('new_'));
+      const created = ordered.filter((status) => status.id.startsWith('new_') && status.is_active);
+
+      for (const status of existing) {
+        const { error } = await supabase
+          .from('crm_contact_statuses')
+          .update({
+            label: status.label.trim(),
+            color: status.color,
+            order_index: status.order_index,
+            is_active: status.is_active,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', status.id);
+        if (error) throw error;
+      }
+
+      if (created.length > 0) {
+        const now = Date.now();
+        const { error } = await supabase.from('crm_contact_statuses').insert(
+          created.map((status, idx) => ({
+            key: `custom_${now}_${idx}`,
+            label: status.label.trim(),
+            color: status.color,
+            order_index: status.order_index,
+            is_active: true,
+          })),
+        );
+        if (error) throw error;
+      }
+
+      const { data, error } = await supabase.from('crm_contact_statuses').select('*').order('order_index');
+      if (error) throw error;
+      setStatuses((data ?? []) as CRMContactStatus[]);
+      toast({ title: 'סטטוסי CRM נשמרו בהצלחה' });
+    } catch (error: any) {
+      toast({
+        title: 'שגיאה בשמירת סטטוסים',
+        description: error?.message ?? String(error),
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingStatuses(false);
+    }
   };
 
   if (!loaded) return <Card><CardContent className="p-6 text-sm text-gray-500">טוען...</CardContent></Card>;
@@ -149,21 +264,99 @@ const CRMSettingsTab = () => {
         <CardTitle>הגדרות CRM</CardTitle>
         <CardDescription>הגדרות כלליות למודול ה-CRM</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4 max-w-sm">
+      <CardContent className="space-y-6">
         <div className="space-y-2">
           <Label htmlFor="commission">עמלה למדריך מוכר (₪ לעסקה)</Label>
-          <Input
-            id="commission"
-            type="number"
-            min="0"
-            value={commission}
-            onChange={e => setCommission(e.target.value)}
-          />
+          <div className="flex max-w-sm gap-2">
+            <Input
+              id="commission"
+              type="number"
+              min="0"
+              value={commission}
+              onChange={e => setCommission(e.target.value)}
+            />
+            <Button onClick={save} disabled={savingCommission}>
+              {savingCommission ? <Loader2 className="animate-spin h-4 w-4 ml-2" /> : <Save className="h-4 w-4 ml-2" />}
+              שמור
+            </Button>
+          </div>
         </div>
-        <Button onClick={save} disabled={saving}>
-          {saving ? <Loader2 className="animate-spin h-4 w-4 ml-2" /> : <Save className="h-4 w-4 ml-2" />}
-          שמור
-        </Button>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">סטטוסי קשר</h3>
+              <p className="text-sm text-gray-500">הסטטוסים שמופיעים בעמודת סטטוס בטבלת ה-CRM</p>
+            </div>
+            <Button variant="outline" onClick={addStatus}>
+              <Plus className="h-4 w-4 ml-2" />
+              הוסף סטטוס
+            </Button>
+          </div>
+
+          <div className="rounded-md border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-right">סדר</TableHead>
+                  <TableHead className="text-right">צבע</TableHead>
+                  <TableHead className="text-right">שם</TableHead>
+                  <TableHead className="text-right">מצב</TableHead>
+                  <TableHead className="text-right">פעולות</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {statuses.map((status, idx) => (
+                  <TableRow key={status.id} className={!status.is_active ? 'opacity-55' : undefined}>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => moveStatus(idx, -1)} disabled={idx === 0}>▲</Button>
+                        <Button variant="ghost" size="sm" onClick={() => moveStatus(idx, 1)} disabled={idx === statuses.length - 1}>▼</Button>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <input
+                        type="color"
+                        value={status.color}
+                        onChange={(e) => updateStatus(status.id, { color: e.target.value })}
+                        className="h-8 w-10 cursor-pointer rounded border bg-transparent p-0"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        value={status.label}
+                        onChange={(e) => updateStatus(status.id, { label: e.target.value })}
+                        disabled={!status.is_active}
+                        placeholder="שם סטטוס"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <span className={status.is_active ? 'text-green-700' : 'text-gray-500'}>
+                        {status.is_active ? 'פעיל' : 'לא פעיל'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {status.is_active ? (
+                        <Button variant="ghost" size="sm" onClick={() => deactivateStatus(status.id)}>
+                          השבת
+                        </Button>
+                      ) : (
+                        <Button variant="ghost" size="sm" onClick={() => updateStatus(status.id, { is_active: true })}>
+                          הפעל
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <Button onClick={saveStatuses} disabled={savingStatuses}>
+            {savingStatuses ? <Loader2 className="animate-spin h-4 w-4 ml-2" /> : <Save className="h-4 w-4 ml-2" />}
+            שמור סטטוסים
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

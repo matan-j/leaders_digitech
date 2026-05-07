@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Trash2 } from 'lucide-react';
+import { Paperclip, Trash2 } from 'lucide-react';
 import Papa from 'papaparse';
 import { supabase } from '@/integrations/supabase/client';
 import AssignInstructorModal from './AssignInstructorModal';
@@ -55,16 +55,20 @@ const Av = ({ name, size = 22, color = C.accent, bg = C.accentBg }: { name: stri
   </div>
 );
 
-// ── risk/status helpers ───────────────────────────────────────
+// ── contact status helpers ────────────────────────────────────
 
-const RISK_OPTIONS: { value: string; label: string; dot: string }[] = [
-  { value: 'high',   label: 'לא שוחחנו', dot: '#DC2626' },
-  { value: 'medium', label: 'בתהליך',    dot: '#D97706' },
-  { value: 'low',    label: 'שוחחנו',    dot: '#16A34A' },
+const LEGACY_CONTACT_STATUS_FALLBACK: ContactStatus[] = [
+  { id: 'legacy-high', key: 'not_contacted', label: 'לא שוחחנו', color: '#DC2626', order_index: 0, legacy_crm_risk: 'high' },
+  { id: 'legacy-medium', key: 'in_progress', label: 'בתהליך', color: '#D97706', order_index: 1, legacy_crm_risk: 'medium' },
+  { id: 'legacy-low', key: 'contacted', label: 'שוחחנו', color: '#16A34A', order_index: 2, legacy_crm_risk: 'low' },
 ];
 
-const getRiskOption = (risk: string | null) =>
-  RISK_OPTIONS.find((o) => o.value === risk) ?? RISK_OPTIONS[0];
+const getContactStatus = (statuses: ContactStatus[], statusId: string | null, legacyRisk: string | null) => {
+  const options = statuses.length > 0 ? statuses : LEGACY_CONTACT_STATUS_FALLBACK;
+  return options.find((o) => o.id === statusId)
+    ?? options.find((o) => o.legacy_crm_risk === legacyRisk)
+    ?? options[0];
+};
 
 // ── types ────────────────────────────────────────────────────
 
@@ -74,6 +78,15 @@ interface CRMContact {
   phone: string | null;
   role: string | null;
   is_primary: boolean | null;
+}
+
+interface ContactStatus {
+  id: string;
+  key: string;
+  label: string;
+  color: string;
+  order_index: number;
+  legacy_crm_risk: string | null;
 }
 
 interface InstitutionRow {
@@ -90,6 +103,9 @@ interface InstitutionRow {
   crm_potential: number | null;
   crm_notes: string | null;
   crm_risk: string | null;
+  crm_contact_status_id: string | null;
+  contact_status: ContactStatus | null;
+  has_files: boolean;
   instructor: { id: string; full_name: string } | null;
   contacts: CRMContact[];
   primaryPhone?: string | null;
@@ -99,7 +115,7 @@ interface PipelineStageOption {
   name: string;
 }
 
-type InstitutionPatch = Partial<Pick<InstitutionRow, 'crm_stage' | 'crm_last_contact_at'>>;
+type InstitutionPatch = Partial<Pick<InstitutionRow, 'city' | 'crm_stage' | 'crm_last_contact_at'>>;
 type ContactPatch = Partial<Pick<CRMContact, 'name' | 'role' | 'phone'>>;
 
 // ── sort types ────────────────────────────────────────────────
@@ -288,8 +304,13 @@ const NotesPopover = ({ institutionId, notes, onSaved }: NotesPopoverProps) => {
       const rect = ref.current?.getBoundingClientRect();
       if (!rect) return;
       const width = 260;
+      const height = popoverRef.current?.offsetHeight ?? 190;
       const left = Math.min(Math.max(rect.right - width, 8), window.innerWidth - width - 8);
-      setPopoverPosition({ top: rect.bottom + 4, left });
+      const opensDown = rect.bottom + 4 + height <= window.innerHeight - 8;
+      const top = opensDown
+        ? rect.bottom + 4
+        : Math.max(8, rect.top - height - 4);
+      setPopoverPosition({ top, left });
     };
     updatePosition();
     const handler = (e: MouseEvent) => {
@@ -391,14 +412,17 @@ const NotesPopover = ({ institutionId, notes, onSaved }: NotesPopoverProps) => {
 
 interface RiskDropdownProps {
   institutionId: string;
-  risk: string | null;
-  onChanged: (id: string, risk: string) => void;
+  statusId: string | null;
+  legacyRisk: string | null;
+  statuses: ContactStatus[];
+  onChanged: (id: string, status: ContactStatus) => void;
 }
 
-const RiskDropdown = ({ institutionId, risk, onChanged }: RiskDropdownProps) => {
+const RiskDropdown = ({ institutionId, statusId, legacyRisk, statuses, onChanged }: RiskDropdownProps) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const current = getRiskOption(risk);
+  const options = statuses.length > 0 ? statuses : LEGACY_CONTACT_STATUS_FALLBACK;
+  const current = getContactStatus(statuses, statusId, legacyRisk);
 
   useEffect(() => {
     if (!open) return;
@@ -409,12 +433,12 @@ const RiskDropdown = ({ institutionId, risk, onChanged }: RiskDropdownProps) => 
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  const handleSelect = async (value: string) => {
+  const handleSelect = async (status: ContactStatus) => {
     setOpen(false);
-    onChanged(institutionId, value);
+    onChanged(institutionId, status);
     await supabase
       .from('educational_institutions')
-      .update({ crm_risk: value })
+      .update({ crm_contact_status_id: status.id.startsWith('legacy-') ? null : status.id })
       .eq('id', institutionId);
   };
 
@@ -424,7 +448,7 @@ const RiskDropdown = ({ institutionId, risk, onChanged }: RiskDropdownProps) => 
         onClick={() => setOpen((v) => !v)}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', userSelect: 'none' }}
       >
-        <div style={{ width: 9, height: 9, borderRadius: '50%', background: current.dot, flexShrink: 0 }} />
+        <div style={{ width: 9, height: 9, borderRadius: '50%', background: current.color, flexShrink: 0 }} />
         <span style={{ fontSize: 11, color: C.textSub, fontWeight: 500 }}>{current.label}</span>
       </div>
       {open && (
@@ -433,19 +457,19 @@ const RiskDropdown = ({ institutionId, risk, onChanged }: RiskDropdownProps) => 
           background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7,
           boxShadow: '0 8px 24px rgba(0,0,0,0.13)', overflow: 'hidden', minWidth: 120,
         }}>
-          {RISK_OPTIONS.map((o) => (
+          {options.map((o) => (
             <div
-              key={o.value}
-              onClick={() => handleSelect(o.value)}
+              key={o.id}
+              onClick={() => handleSelect(o)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 7, padding: '7px 12px',
                 fontSize: 12, cursor: 'pointer', color: C.text,
-                background: o.value === risk ? C.bg : undefined,
+                background: o.id === current.id ? C.bg : undefined,
               }}
               onMouseEnter={(e) => (e.currentTarget.style.background = C.bg)}
-              onMouseLeave={(e) => (e.currentTarget.style.background = o.value === risk ? C.bg : '')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = o.id === current.id ? C.bg : '')}
             >
-              <div style={{ width: 9, height: 9, borderRadius: '50%', background: o.dot }} />
+              <div style={{ width: 9, height: 9, borderRadius: '50%', background: o.color }} />
               {o.label}
             </div>
           ))}
@@ -903,6 +927,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
   const persistedTableState = getPersistedTableState(searchParams, mode);
   const [rows, setRows] = useState<InstitutionRow[]>([]);
   const [pipelineStageNames, setPipelineStageNames] = useState<string[]>([]);
+  const [contactStatuses, setContactStatuses] = useState<ContactStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCsv, setShowCsv] = useState(false);
   const [showAddInstitution, setShowAddInstitution] = useState(false);
@@ -974,6 +999,18 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
     }
   }, []);
 
+  const fetchContactStatuses = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('crm_contact_statuses')
+      .select('id, key, label, color, order_index, legacy_crm_risk')
+      .eq('is_active', true)
+      .order('order_index');
+
+    if (!error && data) {
+      setContactStatuses(data as ContactStatus[]);
+    }
+  }, []);
+
   // ── load data ────────────────────────────────────────────────
   const fetchInstitutions = useCallback(async () => {
     setLoading(true);
@@ -983,7 +1020,8 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
         id, name, city,
         crm_class, crm_stage, crm_last_contact_at, crm_next_step, crm_next_step_date,
         crm_owner_id, crm_assigned_instructor_id,
-        crm_potential, crm_notes, crm_risk,
+        crm_potential, crm_notes, crm_risk, crm_contact_status_id, has_files,
+        contact_status:crm_contact_status_id (id, key, label, color, order_index, legacy_crm_risk),
         instructor:crm_assigned_instructor_id (id, full_name),
         contacts:crm_contacts (id, name, phone, role, is_primary)
       `)
@@ -1020,6 +1058,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
       setRows(
         data.map((d: any) => ({
           ...d,
+          contact_status: Array.isArray(d.contact_status) ? d.contact_status[0] ?? null : d.contact_status,
           instructor: Array.isArray(d.instructor) ? d.instructor[0] ?? null : d.instructor,
           contacts: Array.isArray(d.contacts) ? d.contacts : [],
           primaryPhone: phoneMap[d.id] ?? null,
@@ -1031,6 +1070,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
 
   useEffect(() => { fetchInstitutions(); }, [fetchInstitutions]);
   useEffect(() => { fetchPipelineStages(); }, [fetchPipelineStages]);
+  useEffect(() => { fetchContactStatuses(); }, [fetchContactStatuses]);
 
   // ── derived filter options ───────────────────────────────────
   const cities = [...new Set(rows.map((r) => r.city).filter(Boolean))] as string[];
@@ -1139,8 +1179,12 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
     setRows((prev) => prev.map((r) => r.id === id ? { ...r, crm_notes: notes || null } : r));
   };
 
-  const handleRiskChanged = (id: string, risk: string) => {
-    setRows((prev) => prev.map((r) => r.id === id ? { ...r, crm_risk: risk } : r));
+  const handleRiskChanged = (id: string, status: ContactStatus) => {
+    setRows((prev) => prev.map((r) => r.id === id ? {
+      ...r,
+      crm_contact_status_id: status.id.startsWith('legacy-') ? null : status.id,
+      contact_status: status.id.startsWith('legacy-') ? null : status,
+    } : r));
   };
 
   const updateInstitutionField = async (id: string, patch: InstitutionPatch) => {
@@ -1426,19 +1470,52 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
                   >
                     {/* Institution name */}
                     <td style={{ padding: '9px 12px' }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: C.accent }}>{row.name}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: C.accent }}>
+                        <span>{row.name}</span>
+                        {row.has_files && (
+                          <button
+                            type="button"
+                            title="יש קבצים למוסד"
+                            aria-label="יש קבצים למוסד"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/crm/institution/${row.id}?tab=files`);
+                            }}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              padding: 0,
+                              border: 'none',
+                              background: 'transparent',
+                              color: C.textSub,
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <Paperclip size={14} aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
                     </td>
 
                     {/* City */}
-                    <td style={{ padding: '9px 12px', fontSize: 12, color: C.textSub }}>
-                      {row.city ?? '—'}
+                    <td style={{ padding: '9px 12px' }} onClick={(e) => e.stopPropagation()}>
+                      <InlineTextCell
+                        value={row.city}
+                        placeholder="+ עיר"
+                        onSave={(value) => updateInstitutionField(row.id, { city: value.trim() || null })}
+                        style={{ fontSize: 12, color: C.textSub }}
+                      />
                     </td>
 
                     {/* Status / Risk */}
                     <td style={{ padding: '9px 12px' }}>
                       <RiskDropdown
                         institutionId={row.id}
-                        risk={row.crm_risk}
+                        statusId={row.crm_contact_status_id}
+                        legacyRisk={row.crm_risk}
+                        statuses={contactStatuses}
                         onChanged={handleRiskChanged}
                       />
                     </td>

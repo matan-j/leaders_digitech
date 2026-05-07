@@ -297,7 +297,7 @@ function EditStagesModal({ stages, onClose, onSaved }: { stages: PipelineStage[]
                 </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#DC2626', whiteSpace: 'nowrap', cursor: 'pointer' }}>
                   <input type="checkbox" checked={stage.is_lost} onChange={(e) => update(stage.id, { is_lost: e.target.checked, is_won: false })} />
-                  הפסד
+                  נסגר ללא המשך
                 </label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   <button onClick={() => moveUp(idx)} disabled={idx === 0} style={{ background: 'none', border: 'none', cursor: idx === 0 ? 'not-allowed' : 'pointer', fontSize: 10, color: '#6B7280', padding: '1px 3px', opacity: idx === 0 ? 0.3 : 1 }}>▲</button>
@@ -551,8 +551,8 @@ export default function CRMPipeline() {
         id, name, city, crm_stage, crm_class, crm_last_contact_at, crm_potential,
         instructor:crm_assigned_instructor_id (id, full_name)
       `)
-      .eq('is_deleted', false)
-      .in('crm_class', ['Lead', 'Customer'])
+      .or('is_deleted.eq.false,is_deleted.is.null')
+      .or('crm_class.eq.Lead,crm_class.is.null')
       .order('name');
 
     if (!error && data) {

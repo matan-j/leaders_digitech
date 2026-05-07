@@ -52,6 +52,12 @@ function replaceVars(
     .replace(/\[שם_שולח\]/g, 'צוות דיגי-טק')
     .replace(/\[תאריך\]/g, dateStr)
     .replace(/\[תוכנית\]/g, program)
+    .replace(/\{\{שם\}\}/g, contactName)
+    .replace(/\{\{שם_מוסד\}\}/g, institution.name)
+    .replace(/\{\{מוסד\}\}/g, institution.name)
+    .replace(/\{\{שם_שולח\}\}/g, 'צוות דיגי-טק')
+    .replace(/\{\{תאריך\}\}/g, dateStr)
+    .replace(/\{\{תוכנית\}\}/g, program)
 }
 
 // ── Resolve recipients ─────────────────────────────────────────────────────────
@@ -219,6 +225,8 @@ Deno.serve(async (req) => {
                 institution_id: institution.id,
                 contact_id: contact.id,
                 user_id: user_id ?? null,
+                broadcast_id,
+                template_id: broadcast.template_id,
               },
             },
           })
@@ -253,6 +261,8 @@ Deno.serve(async (req) => {
                 institution_id: institution.id,
                 contact_id: contact.id,
                 user_id: user_id ?? null,
+                broadcast_id,
+                template_id: broadcast.template_id,
               },
             },
           })

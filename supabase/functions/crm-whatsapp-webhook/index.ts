@@ -1,8 +1,8 @@
 import { createClient } from 'jsr:@supabase/supabase-js'
 
-const SUPABASE_URL               = Deno.env.get('SUPABASE_URL')!
-const SUPABASE_SERVICE_ROLE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const GREEN_API_WEBHOOK_SECRET   = Deno.env.get('GREEN_API_WEBHOOK_SECRET')   // optional for initial testing
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const GREEN_API_WEBHOOK_SECRET = Deno.env.get('GREEN_API_WEBHOOK_SECRET')
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,15 +10,10 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-// Normalize a phone string to digits only, no leading +
-// e.g. "+972-50-123-4567" → "972501234567"
-//      "050 123 4567"     → "0501234567"  (will still be compared against stored values)
 function normalizePhone(raw: string): string {
   return raw.replace(/[^0-9]/g, '')
 }
 
-// Green API always sends 972XXXXXXXXX; convert to 0XXXXXXXXX as well
-// so we can match against contacts stored as "05X..."
 function israeliVariants(phone: string): string[] {
   const variants = [phone]
   if (phone.startsWith('972')) {
@@ -36,14 +31,11 @@ interface MatchResult {
 
 async function findInstitution(
   supabase: ReturnType<typeof createClient>,
-  rawPhone: string
+  rawPhone: string,
 ): Promise<MatchResult | null> {
   const normalized = normalizePhone(rawPhone)
-  const variants   = israeliVariants(normalized)
+  const variants = israeliVariants(normalized)
 
-  // ── Pass 1: crm_contacts ──────────────────────────────────────
-  // Fetch all contacts and normalize server-side to avoid needing
-  // a DB function for regex. Contacts table is small (<10k rows).
   const { data: contacts, error: cErr } = await supabase
     .from('crm_contacts')
     .select('id, institution_id, phone')
@@ -61,17 +53,12 @@ async function findInstitution(
     }
   }
 
-  // ── Pass 2: educational_institutions.phone ────────────────────
-  // NOTE: educational_institutions currently has no `phone` column.
-  // This query will return an empty result set until a phone column
-  // is added to the table (migration required).
   const { data: insts, error: iErr } = await supabase
     .from('educational_institutions')
     .select('id, phone')
     .not('phone', 'is', null)
 
   if (iErr) {
-    // Column likely doesn't exist yet — log and skip silently
     console.warn('[crm-whatsapp-webhook] educational_institutions.phone not available:', iErr.message)
   } else if (insts) {
     for (const inst of insts) {
@@ -90,8 +77,29 @@ async function isDuplicate(
   supabase: ReturnType<typeof createClient>,
   institution_id: string,
   occurredAt: string,
-  messagePrefix: string
+  messagePrefix: string,
+  providerMessageId: string | null,
 ): Promise<boolean> {
+  if (providerMessageId) {
+    const [{ data: matched }, { data: unmatched }] = await Promise.all([
+      supabase
+        .from('crm_communications')
+        .select('id')
+        .eq('provider', 'green_api')
+        .eq('provider_message_id', providerMessageId)
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('crm_unmatched_communications')
+        .select('id')
+        .eq('provider', 'green_api')
+        .eq('provider_message_id', providerMessageId)
+        .limit(1)
+        .maybeSingle(),
+    ])
+    return matched !== null || unmatched !== null
+  }
+
   const { data } = await supabase
     .from('crm_activities')
     .select('id')
@@ -104,12 +112,85 @@ async function isDuplicate(
   return data !== null
 }
 
+function getProviderMessageId(body: Record<string, unknown>): string | null {
+  const direct = body.idMessage
+  if (typeof direct === 'string') return direct
+
+  const messageData = body.messageData
+  if (messageData && typeof messageData === 'object' && 'idMessage' in messageData) {
+    const nested = (messageData as Record<string, unknown>).idMessage
+    if (typeof nested === 'string') return nested
+  }
+
+  return null
+}
+
+async function logUnmatchedInboundCommunication(params: {
+  supabase: ReturnType<typeof createClient>
+  textMessage: string
+  rawPhone: string
+  occurredAt: string
+  providerMessageId: string | null
+  providerPayload: Record<string, unknown>
+}) {
+  const { error } = await params.supabase.from('crm_unmatched_communications').insert({
+    channel: 'whatsapp',
+    direction: 'inbound',
+    body_text: params.textMessage,
+    sender_address: params.rawPhone,
+    recipient_name: 'Leaders CRM',
+    provider: 'green_api',
+    provider_message_id: params.providerMessageId,
+    provider_status: 'received',
+    provider_payload: params.providerPayload,
+    status: 'unmatched',
+    occurred_at: params.occurredAt,
+  })
+
+  if (error) {
+    console.error('[crm-whatsapp-webhook] unmatched communication insert error:', error.message)
+  }
+}
+
+async function logInboundCommunication(params: {
+  supabase: ReturnType<typeof createClient>
+  institution_id: string
+  contact_id: string | null
+  activity_id: string | null
+  textMessage: string
+  rawPhone: string
+  occurredAt: string
+  providerMessageId: string | null
+  providerPayload: Record<string, unknown>
+}) {
+  const { error } = await params.supabase.from('crm_communications').insert({
+    institution_id: params.institution_id,
+    contact_id: params.contact_id,
+    activity_id: params.activity_id,
+    channel: 'whatsapp',
+    direction: 'inbound',
+    body_text: params.textMessage,
+    sender_address: params.rawPhone,
+    recipient_name: 'Leaders CRM',
+    provider: 'green_api',
+    provider_message_id: params.providerMessageId,
+    provider_status: 'received',
+    provider_payload: params.providerPayload,
+    status: 'received',
+    received_at: params.occurredAt,
+    occurred_at: params.occurredAt,
+  })
+
+  if (error) {
+    console.error('[crm-whatsapp-webhook] communication insert error:', error.message)
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
-  // Always return 200 to Green API — even on errors — to prevent infinite retries
   const ok200 = (reason?: string) => {
     if (reason) console.log('[crm-whatsapp-webhook]', reason)
     return new Response(JSON.stringify({ received: true }), {
@@ -119,7 +200,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // ── Secret check ────────────────────────────────────────────
     if (GREEN_API_WEBHOOK_SECRET) {
       const incomingSecret = req.headers.get('x-green-api-secret')
       if (incomingSecret !== GREEN_API_WEBHOOK_SECRET) {
@@ -131,87 +211,101 @@ Deno.serve(async (req) => {
       }
     }
 
-    const body = await req.json()
+    const body = await req.json() as Record<string, unknown>
 
-    // ── Filter webhook type ─────────────────────────────────────
     if (body.typeWebhook !== 'incomingMessageReceived') {
       return ok200(`Ignored webhook type: ${body.typeWebhook}`)
     }
 
-    // ── Filter message type ─────────────────────────────────────
-    const messageType = body.messageData?.typeMessage
+    const messageData = body.messageData as Record<string, unknown> | undefined
+    const messageType = messageData?.typeMessage
     if (messageType !== 'textMessage') {
       return ok200(`Ignored message type: ${messageType}`)
     }
 
-    const textMessage: string = body.messageData?.textMessageData?.textMessage ?? ''
+    const textMessageData = messageData?.textMessageData as Record<string, unknown> | undefined
+    const textMessage = typeof textMessageData?.textMessage === 'string' ? textMessageData.textMessage : ''
     if (!textMessage) {
       return ok200('Empty textMessage body')
     }
 
-    // ── Extract sender phone ────────────────────────────────────
-    const chatId: string = body.senderData?.chatId ?? ''
+    const senderData = body.senderData as Record<string, unknown> | undefined
+    const chatId = typeof senderData?.chatId === 'string' ? senderData.chatId : ''
     const rawPhone = chatId.replace('@c.us', '')
     if (!rawPhone) {
       return ok200('No chatId in senderData')
     }
 
-    // ── Convert Green API timestamp (Unix seconds) to ISO string ─
-    const occurredAt = body.timestamp
-      ? new Date((body.timestamp as number) * 1000).toISOString()
+    const occurredAt = typeof body.timestamp === 'number'
+      ? new Date(body.timestamp * 1000).toISOString()
       : new Date().toISOString()
 
+    const providerMessageId = getProviderMessageId(body)
+    const messagePrefix = textMessage.slice(0, 100)
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-
-    // ── Match phone to institution ──────────────────────────────
     const match = await findInstitution(supabase, rawPhone)
+    const alreadyLogged = await isDuplicate(
+      supabase,
+      match?.institution_id ?? '',
+      occurredAt,
+      messagePrefix,
+      providerMessageId,
+    )
+    if (alreadyLogged) {
+      return ok200(`Duplicate message skipped for provider message ${providerMessageId ?? messagePrefix}`)
+    }
+
     if (!match) {
-      console.log(`[crm-whatsapp-webhook] No institution found for phone: ${rawPhone}`)
+      await logUnmatchedInboundCommunication({
+        supabase,
+        textMessage,
+        rawPhone,
+        occurredAt,
+        providerMessageId,
+        providerPayload: body,
+      })
+      console.log(`[crm-whatsapp-webhook] Stored unmatched inbound message for phone: ${rawPhone}`)
       return ok200()
     }
 
-    const summary       = textMessage.slice(0, 1000)
-    const messagePrefix = textMessage.slice(0, 100)
-
-    // ── Idempotency check ───────────────────────────────────────
-    const alreadyLogged = await isDuplicate(
-      supabase,
-      match.institution_id,
-      occurredAt,
-      messagePrefix
-    )
-    if (alreadyLogged) {
-      return ok200(`Duplicate message skipped for institution ${match.institution_id}`)
-    }
-
-    // ── Insert inbound activity ─────────────────────────────────
-    const { error: insertErr } = await supabase.from('crm_activities').insert({
+    const summary = textMessage.slice(0, 1000)
+    const { data: activity, error: insertErr } = await supabase.from('crm_activities').insert({
       institution_id: match.institution_id,
-      contact_id:     match.contact_id,
-      user_id:        null,
-      type:           'וואטסאפ',
-      direction:      'inbound',
+      contact_id: match.contact_id,
+      user_id: null,
+      type: 'וואטסאפ',
+      direction: 'inbound',
       summary,
-      status:         'Completed',
-      occurred_at:    occurredAt,
-    })
+      status: 'Completed',
+      occurred_at: occurredAt,
+    }).select('id').single()
 
     if (insertErr) {
       console.error('[crm-whatsapp-webhook] Insert error:', insertErr.message)
-      // Still return 200 — don't let Green API retry on a data error
       return ok200()
     }
+
+    await logInboundCommunication({
+      supabase,
+      institution_id: match.institution_id,
+      contact_id: match.contact_id,
+      activity_id: activity?.id ?? null,
+      textMessage,
+      rawPhone,
+      occurredAt,
+      providerMessageId,
+      providerPayload: body,
+    })
 
     console.log(
       `[crm-whatsapp-webhook] Logged inbound message for institution ${match.institution_id}`,
       `contact=${match.contact_id ?? 'none'}`,
-      `phone=${rawPhone}`
+      `phone=${rawPhone}`,
     )
 
     return ok200()
   } catch (err) {
     console.error('[crm-whatsapp-webhook] Unhandled error:', err)
-    // Must return 200 so Green API does not retry
     return ok200()
   }
 })

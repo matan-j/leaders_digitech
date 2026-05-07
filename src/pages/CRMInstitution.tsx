@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { callCrmAI } from '@/hooks/useCrmAI';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -50,6 +50,15 @@ interface Activity {
   summary: string | null; outcome: string | null; next_step: string | null;
   next_step_date: string | null; status: string; occurred_at: string; created_at: string;
 }
+interface Communication {
+  id: string; institution_id: string; contact_id: string | null; activity_id: string | null;
+  channel: 'whatsapp' | 'email'; direction: 'inbound' | 'outbound';
+  subject: string | null; body_text: string; body_html: string | null;
+  sender_name: string | null; sender_address: string | null;
+  recipient_name: string | null; recipient_address: string | null;
+  provider: string | null; provider_message_id: string | null; provider_status: string | null;
+  status: string; sent_at: string | null; received_at: string | null; occurred_at: string; created_at: string;
+}
 interface AIResult {
   score: string; closingChance: string; nextStep: string;
   risks: string; opportunities: string;
@@ -57,6 +66,12 @@ interface AIResult {
 interface CrmFile {
   name: string; size: number; created_at: string; path: string;
 }
+
+const INSTITUTION_TABS = ['overview', 'contacts', 'opportunities', 'activity', 'communication', 'files', 'ai'] as const;
+type InstitutionTab = typeof INSTITUTION_TABS[number];
+
+const parseInstitutionTab = (tab: string | null): InstitutionTab =>
+  INSTITUTION_TABS.includes(tab as InstitutionTab) ? tab as InstitutionTab : 'overview';
 
 // ── shared mini-components ────────────────────────────────────
 const Av = ({ name, size = 32, color = C.accent, bg = C.accentBg }: { name: string; size?: number; color?: string; bg?: string }) => (
@@ -108,6 +123,26 @@ const Btn = ({ children, variant = 'primary', sm, onClick, disabled, style = {} 
 const formatDate = (iso: string | null) => {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' });
+};
+const formatDateTime = (iso: string | null) => {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+};
+const formatTime = (iso: string | null) => {
+  if (!iso) return '';
+  return new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+};
+
+const dateKey = (iso: string) => new Date(iso).toISOString().slice(0, 10);
+
+const formatCommunicationDateLabel = (iso: string) => {
+  const d = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (dateKey(d.toISOString()) === dateKey(today.toISOString())) return 'היום';
+  if (dateKey(d.toISOString()) === dateKey(yesterday.toISOString())) return 'אתמול';
+  return d.toLocaleDateString('he-IL', { day: '2-digit', month: 'long', year: 'numeric' });
 };
 
 const formatLastContact = (iso: string | null) => {
@@ -750,39 +785,182 @@ const TabActivity = ({ activities, contacts, opportunities, onLog, onEdit, onDel
 };
 
 // ── tab: תקשורת ───────────────────────────────────────────────
-const TabCommunication = ({ activities, contacts, onWhatsApp, onEmail }: { activities: Activity[]; contacts: Contact[]; onWhatsApp: () => void; onEmail: () => void }) => {
+type CommunicationFilter = 'all' | 'whatsapp' | 'email';
+type CommunicationTimelineItem =
+  | { kind: 'communication'; id: string; occurred_at: string; communication: Communication }
+  | { kind: 'legacy'; id: string; occurred_at: string; activity: Activity };
+
+const partyLabel = (name: string | null, address: string | null, fallback: string | null) => {
+  if (name && address) return `${name} · ${address}`;
+  return name || address || fallback || 'לא ידוע';
+};
+
+const communicationMeta = (c: Communication) =>
+  [c.provider, c.provider_status || c.status, c.provider_message_id ? `ID ${c.provider_message_id}` : null].filter(Boolean).join(' · ');
+
+const ProviderMeta = ({ communication }: { communication: Communication }) => {
+  const meta = communicationMeta(communication);
+  if (!meta) return null;
+  return (
+    <details style={{ marginTop: 6, fontSize: 10, color: C.textDim }}>
+      <summary style={{ cursor: 'pointer', display: 'inline-block' }}>פרטי ספק</summary>
+      <div style={{ marginTop: 4 }}>{meta}</div>
+    </details>
+  );
+};
+
+const DateSeparator = ({ label }: { label: string }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0 10px' }}>
+    <div style={{ flex: 1, height: 1, background: C.borderLight }} />
+    <span style={{ padding: '3px 10px', borderRadius: 999, background: C.bg, border: `1px solid ${C.border}`, color: C.textSub, fontSize: 11, fontWeight: 700 }}>
+      {label}
+    </span>
+    <div style={{ flex: 1, height: 1, background: C.borderLight }} />
+  </div>
+);
+
+const CommunicationFilterBar = ({ filter, setFilter }: { filter: CommunicationFilter; setFilter: (filter: CommunicationFilter) => void }) => (
+  <div style={{ display: 'flex', gap: 4, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: 3 }}>
+    {([
+      ['all', 'הכל'],
+      ['whatsapp', 'WhatsApp'],
+      ['email', 'Email'],
+    ] as [CommunicationFilter, string][]).map(([value, label]) => (
+      <button key={value} onClick={() => setFilter(value)} style={{ border: 'none', borderRadius: 6, padding: '5px 11px', fontSize: 11, cursor: 'pointer', background: filter === value ? C.surface : 'transparent', color: filter === value ? C.accent : C.textSub, fontWeight: filter === value ? 800 : 600, boxShadow: filter === value ? '0 1px 2px rgba(15,23,42,0.08)' : 'none' }}>
+        {label}
+      </button>
+    ))}
+  </div>
+);
+
+const WhatsAppBubble = ({ communication, fromLabel, toLabel }: { communication: Communication; fromLabel: string; toLabel: string }) => {
+  const inbound = communication.direction === 'inbound';
+  return (
+    <div style={{ display: 'flex', justifyContent: inbound ? 'flex-start' : 'flex-end', width: '100%', padding: '2px 0' }}>
+      <div style={{ maxWidth: '70%', minWidth: 120, display: 'flex', flexDirection: 'column', alignItems: inbound ? 'flex-start' : 'flex-end' }}>
+        <div style={{ marginBottom: 3, padding: '0 6px', fontSize: 10, color: C.textDim, textAlign: inbound ? 'right' : 'left', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {inbound ? fromLabel : toLabel}
+        </div>
+        <div style={{ position: 'relative', background: inbound ? '#FFFFFF' : '#D9FDD3', border: `1px solid ${inbound ? C.borderLight : '#B7E8AE'}`, borderRadius: inbound ? '16px 16px 16px 5px' : '16px 16px 5px 16px', padding: '9px 12px 7px', boxShadow: '0 2px 7px rgba(15,23,42,0.08)', width: 'fit-content', maxWidth: '100%' }}>
+          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55, fontSize: 13, color: C.text, overflowWrap: 'anywhere' }}>{communication.body_text}</div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6, marginTop: 5 }}>
+            <span style={{ fontSize: 10, color: C.textDim }}>{formatTime(communication.occurred_at)}</span>
+            <span style={{ fontSize: 10, color: inbound ? C.teal : C.success, fontWeight: 700 }}>{inbound ? 'נכנס' : 'יוצא'}</span>
+          </div>
+          <ProviderMeta communication={communication} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const EmailCommunicationCard = ({ communication, fromLabel, toLabel }: { communication: Communication; fromLabel: string; toLabel: string }) => {
+  const inbound = communication.direction === 'inbound';
+  const isLong = communication.body_text.length > 420;
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderInlineStart: `4px solid ${inbound ? C.teal : C.accent}`, borderRadius: 9, padding: '12px 15px', boxShadow: '0 1px 2px rgba(15,23,42,0.04)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+        <Badge label="📧 Email" color={C.accent} bg={C.accentBg} />
+        <Badge label={inbound ? 'נכנס' : 'יוצא'} color={inbound ? C.teal : C.accent} bg={inbound ? C.tealBg : C.accentBg} />
+        <span style={{ marginRight: 'auto', fontSize: 11, color: C.textDim }}>{formatTime(communication.occurred_at)}</span>
+      </div>
+      <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginBottom: 7 }}>{communication.subject || '(ללא נושא)'}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '3px 8px', fontSize: 11, color: C.textSub, marginBottom: 10 }}>
+        <span style={{ fontWeight: 700 }}>מאת</span><span>{fromLabel}</span>
+        <span style={{ fontWeight: 700 }}>אל</span><span>{toLabel}</span>
+      </div>
+      {isLong ? (
+        <details>
+          <summary style={{ cursor: 'pointer', color: C.accent, fontSize: 12, fontWeight: 700, marginBottom: 7 }}>הצג תוכן מלא</summary>
+          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.65, fontSize: 13, color: C.text }}>{communication.body_text}</div>
+        </details>
+      ) : (
+        <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.65, fontSize: 13, color: C.text }}>{communication.body_text}</div>
+      )}
+      <ProviderMeta communication={communication} />
+    </div>
+  );
+};
+
+const LegacyCommunicationCard = ({ activity, contacts }: { activity: Activity; contacts: Contact[] }) => {
   const contactMap = Object.fromEntries(contacts.map(c => [c.id, c.name]));
-  const msgs = activities.filter(a => a.type === 'מייל' || a.type === 'וואטסאפ');
+  return (
+    <div style={{ background: C.bg, border: `1px dashed ${C.warning}`, borderRadius: 9, padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+      <div style={{ fontSize: 22, flexShrink: 0 }}>{activity.type === 'מייל' ? '📧' : '📱'}</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+          <Badge label="רשומה ישנה" color={C.warning} bg={C.warningBg} />
+          <span style={{ fontSize: 12, fontWeight: 700 }}>{activity.type}</span>
+          <span style={{ fontSize: 11, color: C.textDim }}>{formatDateTime(activity.occurred_at)}</span>
+          {activity.contact_id && <span style={{ fontSize: 11, color: C.textSub }}>👤 {contactMap[activity.contact_id] ?? '—'}</span>}
+        </div>
+        {activity.summary && <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{activity.summary}</div>}
+      </div>
+    </div>
+  );
+};
+
+const TabCommunication = ({ communications, activities, contacts, onWhatsApp, onEmail }: { communications: Communication[]; activities: Activity[]; contacts: Contact[]; onWhatsApp: () => void; onEmail: () => void }) => {
+  const [filter, setFilter] = useState<CommunicationFilter>('all');
+  const contactMap = Object.fromEntries(contacts.map(c => [c.id, c.name]));
+  const linkedActivityIds = new Set(communications.map(c => c.activity_id).filter((id): id is string => Boolean(id)));
+  const filteredComms = communications.filter(c => filter === 'all' || c.channel === filter);
+  const legacyMsgs = activities
+    .filter(a => a.type === 'מייל' || a.type === 'וואטסאפ')
+    .filter(a => !linkedActivityIds.has(a.id))
+    .filter(a => filter === 'all' || (filter === 'email' ? a.type === 'מייל' : a.type === 'וואטסאפ'));
+  const timelineItems: CommunicationTimelineItem[] = [
+    ...filteredComms.map(c => ({ kind: 'communication' as const, id: c.id, occurred_at: c.occurred_at, communication: c })),
+    ...legacyMsgs.map(a => ({ kind: 'legacy' as const, id: a.id, occurred_at: a.occurred_at || a.created_at, activity: a })),
+  ].sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
+  const total = timelineItems.length;
+  let lastDate = '';
+
+  const fromLabel = (c: Communication) => partyLabel(
+    c.sender_name,
+    c.sender_address,
+    c.direction === 'inbound' && c.contact_id ? contactMap[c.contact_id] : 'Leaders CRM',
+  );
+  const toLabel = (c: Communication) => partyLabel(
+    c.recipient_name,
+    c.recipient_address,
+    c.direction === 'outbound' && c.contact_id ? contactMap[c.contact_id] : 'Leaders CRM',
+  );
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>{msgs.length} הודעות</span>
-        <div style={{ display: 'flex', gap: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 700 }}>{total} הודעות</span>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <CommunicationFilterBar filter={filter} setFilter={setFilter} />
           <Btn variant="teal" sm onClick={onWhatsApp}>📱 וואטסאפ</Btn>
           <Btn variant="ghost" sm onClick={onEmail}>📧 מייל</Btn>
         </div>
       </div>
-      {msgs.length === 0 ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: C.textDim, fontSize: 13 }}>
-          <div style={{ fontSize: 28, marginBottom: 10 }}>💬</div>
-          אין תקשורת עדיין — שלח מייל או וואטסאפ
+      {timelineItems.length > 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+          {timelineItems.map(item => {
+            const currentDate = dateKey(item.occurred_at);
+            const showDate = currentDate !== lastDate;
+            lastDate = currentDate;
+            return (
+              <div key={`${item.kind}-${item.id}`}>
+                {showDate && <DateSeparator label={formatCommunicationDateLabel(item.occurred_at)} />}
+                {item.kind === 'legacy' ? (
+                  <LegacyCommunicationCard activity={item.activity} contacts={contacts} />
+                ) : item.communication.channel === 'whatsapp' ? (
+                  <WhatsAppBubble communication={item.communication} fromLabel={fromLabel(item.communication)} toLabel={toLabel(item.communication)} />
+                ) : (
+                  <EmailCommunicationCard communication={item.communication} fromLabel={fromLabel(item.communication)} toLabel={toLabel(item.communication)} />
+                )}
+              </div>
+            );
+          })}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {msgs.map(a => (
-            <div key={a.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-              <div style={{ fontSize: 22, flexShrink: 0 }}>{a.type === 'מייל' ? '📧' : '📱'}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700 }}>{a.type}</span>
-                  <span style={{ fontSize: 11, color: C.textDim }}>{formatDate(a.occurred_at)}</span>
-                  {a.contact_id && <span style={{ fontSize: 11, color: C.textSub }}>👤 {contactMap[a.contact_id] ?? '—'}</span>}
-                </div>
-                {a.summary && <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>{a.summary}</div>}
-              </div>
-            </div>
-          ))}
+        <div style={{ padding: '40px', textAlign: 'center', color: C.textDim, fontSize: 13 }}>
+          <div style={{ fontSize: 28, marginBottom: 10 }}>💬</div>
+          אין תקשורת להצגה עדיין — שלח מייל או וואטסאפ
         </div>
       )}
     </div>
@@ -819,7 +997,10 @@ const TabFiles = ({ institutionId }: { institutionId: string }) => {
     if (!file) return;
     setUploading(true);
     const safeName = `${Date.now()}_${file.name.replace(/[^\w.\-]/g, '_')}`;
-    await supabase.storage.from('lesson-files').upload(`${prefix}${safeName}`, file);
+    const { error } = await supabase.storage.from('lesson-files').upload(`${prefix}${safeName}`, file);
+    if (!error) {
+      await supabase.from('educational_institutions').update({ has_files: true }).eq('id', institutionId);
+    }
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     await loadFiles();
@@ -827,8 +1008,15 @@ const TabFiles = ({ institutionId }: { institutionId: string }) => {
 
   const deleteFile = async (path: string, name: string) => {
     if (!window.confirm(`למחוק את "${name}"?`)) return;
-    await supabase.storage.from('lesson-files').remove([path]);
+    const { error } = await supabase.storage.from('lesson-files').remove([path]);
+    if (error) return;
     setFiles(p => p.filter(f => f.path !== path));
+    const { data, error: listError } = await supabase.storage.from('lesson-files').list(`crm/${institutionId}`);
+    if (listError) return;
+    const hasFiles = (data ?? []).some(f => f.name !== '.emptyFolderPlaceholder');
+    if (!hasFiles) {
+      await supabase.from('educational_institutions').update({ has_files: false }).eq('id', institutionId);
+    }
   };
 
   const getUrl = (path: string) => supabase.storage.from('lesson-files').getPublicUrl(path).data.publicUrl;
@@ -967,7 +1155,7 @@ const TabAI = ({ institution, opportunities, activities }: { institution: Instit
 };
 
 // ── helpers ───────────────────────────────────────────────────
-async function callGHL(action: string, payload: Record<string, string>) {
+async function callGHL(action: string, payload: Record<string, unknown>) {
   const { data, error } = await supabase.functions.invoke('crm-ghl', {
     body: { action, payload },
   });
@@ -977,7 +1165,7 @@ async function callGHL(action: string, payload: Record<string, string>) {
 }
 
 function replaceVars(text: string, vars: Record<string, string>) {
-  return text.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
+  return text.replace(/\{\{([^}]+)\}\}/g, (_, k) => vars[String(k).trim()] ?? `{{${k}}}`);
 }
 
 function replaceVariables(text: string, contact: Contact, institutionName: string, senderName: string) {
@@ -987,6 +1175,12 @@ function replaceVariables(text: string, contact: Contact, institutionName: strin
     .replace(/\[שם_שולח\]/g, senderName || '')
     .replace(/\[תאריך\]/g, new Date().toLocaleDateString('he-IL'))
     .replace(/\[תוכנית\]/g, '')
+    .replace(/\{\{שם\}\}/g, contact.name || '')
+    .replace(/\{\{שם_מוסד\}\}/g, institutionName || '')
+    .replace(/\{\{מוסד\}\}/g, institutionName || '')
+    .replace(/\{\{שם_שולח\}\}/g, senderName || '')
+    .replace(/\{\{תאריך\}\}/g, new Date().toLocaleDateString('he-IL'))
+    .replace(/\{\{תוכנית\}\}/g, '')
 }
 
 // SendWhatsApp Modal
@@ -1031,9 +1225,18 @@ const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, 
     if (!selectedContact?.phone || !message.trim()) return;
     setSending(true); setError('');
     try {
-      const finalMessage = replaceVariables(message, selectedContact, institutionName, senderName);
-      await callGHL('send_whatsapp', { phone: selectedContact.phone, message: finalMessage, contactName: selectedContact.name });
+      const finalMessage = preview;
       const { data: { user } } = await supabase.auth.getUser();
+      await callGHL('send_whatsapp', {
+        phone: selectedContact.phone,
+        message: finalMessage,
+        contactName: selectedContact.name,
+        institution_id: institutionId,
+        contact_id: contactId || null,
+        user_id: user?.id ?? null,
+        template_id: templateId || null,
+        skip_activity_log: true,
+      });
       const { data: act } = await supabase.from('crm_activities').insert([{
         institution_id: institutionId, type: 'וואטסאפ', user_id: user!.id,
         contact_id: contactId || null, summary: preview.slice(0, 200), status: 'Completed',
@@ -1120,11 +1323,22 @@ const SendEmailModal = ({ contacts, institutionName, institutionId, onClose, onS
     setSending(true); setError('');
     try {
       console.log('guard passed, calling callGHL...')
-      const finalBody = replaceVariables(body, selectedContact, institutionName, senderName);
-      const finalSubject = replaceVariables(subject || '(ללא נושא)', selectedContact, institutionName, senderName);
-      const result = await callGHL('send_email', { email: selectedContact.email, subject: finalSubject, body: finalBody, contactName: selectedContact.name });
-      console.log('callGHL result:', result)
+      const vars = { שם: selectedContact.name, מוסד: institutionName, שם_מוסד: institutionName };
+      const finalBody = replaceVariables(replaceVars(body, vars), selectedContact, institutionName, senderName);
+      const finalSubject = replaceVariables(replaceVars(subject || '(ללא נושא)', vars), selectedContact, institutionName, senderName);
       const { data: { user } } = await supabase.auth.getUser();
+      const result = await callGHL('send_email', {
+        email: selectedContact.email,
+        subject: finalSubject,
+        body: finalBody,
+        contactName: selectedContact.name,
+        institution_id: institutionId,
+        contact_id: contactId || null,
+        user_id: user?.id ?? null,
+        template_id: templateId || null,
+        skip_activity_log: true,
+      });
+      console.log('callGHL result:', result)
       const { data: act } = await supabase.from('crm_activities').insert([{
         institution_id: institutionId, type: 'מייל', user_id: user!.id,
         contact_id: contactId || null, summary: `${subject ? subject + ': ' : ''}${body.slice(0, 160)}`, status: 'Completed',
@@ -1168,11 +1382,14 @@ const SendEmailModal = ({ contacts, institutionName, institutionId, onClose, onS
 const CRMInstitution = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = parseInstitutionTab(searchParams.get('tab'));
 
   const [institution, setInstitution] = useState<Institution | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [communications, setCommunications] = useState<Communication[]>([]);
   const [pipelineStageNames, setPipelineStageNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -1204,11 +1421,12 @@ const CRMInstitution = () => {
     if (!id) return;
     const load = async () => {
       setLoading(true);
-      const [instRes, contactsRes, oppsRes, actsRes] = await Promise.all([
+      const [instRes, contactsRes, oppsRes, actsRes, commsRes] = await Promise.all([
         supabase.from('educational_institutions').select('*, instructor:crm_assigned_instructor_id(id, full_name), owner:crm_owner_id(id, full_name)').eq('id', id).single(),
         supabase.from('crm_contacts').select('*').eq('institution_id', id).order('is_primary', { ascending: false }),
         supabase.from('crm_opportunities').select('*').eq('institution_id', id).order('created_at', { ascending: false }),
         supabase.from('crm_activities').select('*').eq('institution_id', id).order('occurred_at', { ascending: false }),
+        supabase.from('crm_communications').select('*').eq('institution_id', id).order('occurred_at', { ascending: false }),
       ]);
       if (instRes.data) {
         const d = instRes.data as any;
@@ -1221,6 +1439,8 @@ const CRMInstitution = () => {
       if (contactsRes.data) setContacts(contactsRes.data as Contact[]);
       if (oppsRes.data) setOpportunities(oppsRes.data as Opportunity[]);
       if (actsRes.data) setActivities(actsRes.data as Activity[]);
+      if (commsRes.data) setCommunications(commsRes.data as Communication[]);
+      else setCommunications([]);
       setLoading(false);
     };
     load();
@@ -1343,7 +1563,16 @@ const CRMInstitution = () => {
         </div>
 
         {/* Tabs */}
-        <Tabs defaultValue="overview" className="w-full">
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => {
+            const next = new URLSearchParams(searchParams);
+            if (value === 'overview') next.delete('tab');
+            else next.set('tab', value);
+            setSearchParams(next, { replace: true });
+          }}
+          className="w-full"
+        >
           <TabsList className="bg-transparent p-0 h-auto rounded-none border-b border-transparent w-full justify-start gap-0">
             {([
               { value: 'overview',       label: 'סקירה' },
@@ -1376,7 +1605,7 @@ const CRMInstitution = () => {
               <TabActivity activities={activities} contacts={contacts} opportunities={opportunities} onLog={() => setShowLogActivity(true)} onEdit={setEditActivity} onDelete={deleteActivity} />
             </TabsContent>
             <TabsContent value="communication">
-              <TabCommunication activities={activities} contacts={contacts} onWhatsApp={() => setShowWhatsApp(true)} onEmail={() => setShowEmail(true)} />
+              <TabCommunication communications={communications} activities={activities} contacts={contacts} onWhatsApp={() => setShowWhatsApp(true)} onEmail={() => setShowEmail(true)} />
             </TabsContent>
             <TabsContent value="files">
               {id && <TabFiles institutionId={id} />}

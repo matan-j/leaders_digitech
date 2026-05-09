@@ -22,6 +22,7 @@ interface Template {
 
 interface PipelineStageOption {
   name: string | null;
+  color: string | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -38,50 +39,14 @@ const C = {
   purple: '#7C3AED', purpleBg: '#EDE9FE',
 };
 
-const STAGE_COLOR: Record<string, string> = {
-  'יצירת קשר': '#6B7280',
-  'מעוניין': '#3B5BDB',
-  'סגירה': '#D97706',
-  'זכה': '#16A34A',
-  'הפסיד': '#DC2626',
-};
-
-const STAGE_TIPS: Record<string, string> = {
-  'יצירת קשר': 'שמור על טון חם ואישי. הכנס שם מוסד ספציפי.',
-  'מעוניין': 'הזכר מה דיברתם. הצמד קישור להצעה.',
-  'סגירה': 'צור urgency עדינה עם תאריך יעד ברור.',
-  'זכה': 'חגוג! עבור מהר לפרטים הלוגיסטיים.',
-  'הפסיד': 'השאר דלת פתוחה. אל תלחץ.',
-};
-
-const DEFAULTS: StageTexts = {
-  'יצירת קשר': {
-    whatsapp: 'שלום [שם] 👋\nאני [שם_שולח] מדיגי-טק.\nשמחתי להכיר את [שם_מוסד] — רצינו לשתף אתכם בתוכניות AI לתלמידים.\nניתן לקבוע שיחת היכרות קצרה? 🙏',
-    email: 'שלום [שם],\n\nאני [שם_שולח] מדיגי-טק — חברה המתמחה בתוכניות AI ומיומנויות דיגיטל לבתי ספר.\n\nשמחתי להכיר את [שם_מוסד] ואשמח לתאם שיחה קצרה של 15 דקות.\n\nבברכה,\n[שם_שולח] | דיגי-טק',
-  },
-  'מעוניין': {
-    whatsapp: 'היי [שם] 😊\nבהמשך לשיחתנו — מצורפת ההצעה עבור [שם_מוסד].\nנשמח לשמוע! 🚀\nדיגי-טק',
-    email: 'שלום [שם],\n\nבהמשך לשיחתנו, מצורפת הצעת המחיר המפורטת עבור [שם_מוסד].\n\nאשמח לענות על שאלות ולקבוע שיחה.\n\nבברכה,\n[שם_שולח] | דיגי-טק',
-  },
-  'סגירה': {
-    whatsapp: 'שלום [שם] 🤝\nנשמח לסגור את השיתוף עם [שם_מוסד]!\nניתן לשלוח חוזה?\nדיגי-טק',
-    email: 'שלום [שם],\n\nאנחנו שמחים לקדם את השיתוף עם [שם_מוסד]!\nמצורף החוזה לחתימה עד [תאריך].\n\nבברכה,\n[שם_שולח] | דיגי-טק',
-  },
-  'זכה': {
-    whatsapp: 'ברכות [שם]! 🎉\nשמחים להתחיל את הדרך עם [שם_מוסד]!\nנחזור בקרוב עם פרטי הפתיחה.\nדיגי-טק',
-    email: 'שלום [שם],\n\nברכות! נשמח לפתוח את שיתוף הפעולה עם [שם_מוסד].\n\nנחזור אליכם תוך 48 שעות עם לוח זמנים.\n\nבברכה,\n[שם_שולח] | דיגי-טק',
-  },
-  'הפסיד': {
-    whatsapp: 'שלום [שם],\nמעריכים מאוד את זמנכם 🙏\nאם המצב ישתנה — נשמח לחזור.\nדיגי-טק',
-    email: 'שלום [שם],\n\nתודה על הזמן והנכונות לשוחח.\nמקווים לשיתוף פעולה בעתיד.\n\nבברכה,\n[שם_שולח] | דיגי-טק',
-  },
+const DEFAULT_TEXT_BY_CHANNEL: Record<Channel, string> = {
+  whatsapp: 'שלום [שם],\nאני [שם_שולח] מדיגי-טק.\nרציתי לעדכן לגבי [שם_מוסד] ולהמשיך מכאן בצורה נוחה.\nאפשר לתאם שיחה קצרה?',
+  email: 'שלום [שם],\n\nאני [שם_שולח] מדיגי-טק.\nרציתי לעדכן לגבי [שם_מוסד] ולהמשיך את השיחה בצורה מסודרת.\n\nבברכה,\n[שם_שולח] | דיגי-טק',
 };
 
 const emptyTexts = (): Record<Channel, string> => ({ whatsapp: '', email: '' });
-const cloneDefaultTexts = (): StageTexts => JSON.parse(JSON.stringify(DEFAULTS));
-const getDefaultText = (stage: Stage, channel: Channel) => DEFAULTS[stage]?.[channel] ?? '';
-const getStageColor = (stage: Stage) => STAGE_COLOR[stage] ?? C.accent;
-const getStageTip = (stage: Stage) => STAGE_TIPS[stage] ?? 'התאם את הטון לשלב הנוכחי ושמור על הודעה קצרה וברורה.';
+const getDefaultText = (_stage: Stage, channel: Channel) => DEFAULT_TEXT_BY_CHANNEL[channel];
+const getStageTip = (_stage: Stage) => 'התאם את הטון לשלב הנוכחי ושמור על הודעה קצרה וברורה.';
 
 const VARS = [
   { v: '[שם]', l: 'שם איש קשר' },
@@ -99,11 +64,11 @@ export default function CRMMessagesEditor() {
   const { user } = useAuth();
 
   // ── Stage-mode state ──
-  const [pipelineStageNames, setPipelineStageNames] = useState<string[]>([]);
+  const [pipelineStages, setPipelineStages] = useState<PipelineStageOption[]>([]);
   const [templateStageNames, setTemplateStageNames] = useState<string[]>([]);
   const [stage, setStage] = useState<Stage>('');
   const [channel, setChannel] = useState<Channel>('whatsapp');
-  const [texts, setTexts] = useState<StageTexts>(() => cloneDefaultTexts());
+  const [texts, setTexts] = useState<StageTexts>({});
   const [templateIds, setTemplateIds] = useState<Partial<Record<string, string>>>({});
   const [hasTemplate, setHasTemplate] = useState<Partial<Record<string, boolean>>>({});
   const [saveState, setSaveState] = useState<Partial<Record<string, 'saved' | 'dirty'>>>({});
@@ -127,6 +92,14 @@ export default function CRMMessagesEditor() {
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   const key = (s: Stage, c: Channel) => `${s}__${c}`;
+  const pipelineStageNames = pipelineStages
+    .map((s) => s.name?.trim())
+    .filter(Boolean) as string[];
+  const stageColorMap = Object.fromEntries(
+    pipelineStages
+      .map((s) => [s.name?.trim(), s.color ?? C.accent] as const)
+      .filter((entry): entry is [string, string] => Boolean(entry[0])),
+  );
   const stageOptions = [
     ...pipelineStageNames,
     ...templateStageNames.filter((s) => !pipelineStageNames.includes(s)),
@@ -158,15 +131,11 @@ export default function CRMMessagesEditor() {
   const loadPipelineStages = useCallback(async () => {
     const { data, error } = await supabase
       .from('crm_pipeline_stages')
-      .select('name')
+      .select('name, color')
       .order('order_index');
 
     if (!error && data) {
-      setPipelineStageNames(
-        (data as PipelineStageOption[])
-          .map((s) => s.name?.trim())
-          .filter(Boolean) as string[]
-      );
+      setPipelineStages(data as PipelineStageOption[]);
     }
   }, []);
 
@@ -187,7 +156,7 @@ export default function CRMMessagesEditor() {
         .from('crm_message_templates')
         .select('id, stage, channel, body, subject, name, variables, created_by');
       if (!data) return;
-      const newTexts = cloneDefaultTexts();
+      const newTexts: StageTexts = {};
       const newIds: Partial<Record<string, string>> = {};
       const newHas: Partial<Record<string, boolean>> = {};
       const stagesFromTemplates = new Set<string>();
@@ -358,7 +327,7 @@ export default function CRMMessagesEditor() {
           )}
 
           {stageOptions.map(s => {
-            const color = getStageColor(s);
+            const color = stageColorMap[s] ?? C.accent;
             const waHas = !!hasTemplate[key(s, 'whatsapp')];
             const emHas = !!hasTemplate[key(s, 'email')];
             const active = mode === 'stage' && stage === s;

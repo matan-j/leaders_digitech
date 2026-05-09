@@ -1,6 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/auth/AuthProvider';
+import {
+  CRM_CUSTOMER_CLASS,
+  CRM_LEAD_CLASS,
+  CRM_SOFT_DELETE_FILTER,
+  applyCustomerClass as applyCustomerOnly,
+  applyLeadClass as applyLeadOnly,
+  applyNotDeleted,
+  countInstitutionIdsWithDestination,
+  countSendableInstitutions,
+  fetchInstitutionIds,
+  hasRequiredDestination,
+  pickBestContactForChannel,
+} from '@/lib/crmQueryHelpers';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -29,6 +42,21 @@ interface CRMList {
   member_count: number;
 }
 
+interface PipelineStage {
+  id: string;
+  name: string;
+  color: string;
+  order_index: number;
+}
+
+interface ContactStatus {
+  id: string;
+  label: string;
+  color: string;
+  order_index: number;
+  legacy_crm_risk: string | null;
+}
+
 interface SendResult {
   success?: boolean;
   total?: number;
@@ -44,6 +72,7 @@ interface RecipientPreview {
   contact_name: string | null;
   phone: string | null;
   email: string | null;
+  available: boolean;
 }
 
 interface ListMemberRow {
@@ -58,6 +87,12 @@ interface InstResult {
   id: string;
   name: string;
   city: string | null;
+}
+
+interface RecipientStats {
+  total: number;
+  available: number;
+  unavailable: number;
 }
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -75,21 +110,92 @@ const C = {
   ai: '#0EA5E9', aiBg: '#E0F2FE',
 };
 
+const FILTERED_AUDIENCE_ID = 'filtered';
+const chunkIds = <T,>(items: T[], size: number): T[][] => {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+};
+
+async function fetchInstitutionIdsWithDestination(
+  institutionIds: string[],
+  channel: Channel,
+): Promise<string[]> {
+  if (institutionIds.length === 0) return [];
+
+  const destinationColumn = channel === 'whatsapp' ? 'phone' : 'email';
+  const matched = new Set<string>();
+
+  for (const ids of chunkIds(institutionIds, 500)) {
+    const { data, error } = await supabase
+      .from('crm_contacts')
+      .select(`institution_id, ${destinationColumn}`)
+      .in('institution_id', ids)
+      .not(destinationColumn, 'is', null);
+
+    if (error) throw error;
+
+    for (const contact of data ?? []) {
+      const destination = contact[destinationColumn];
+      if (typeof destination === 'string' && destination.trim()) {
+        matched.add(contact.institution_id);
+      }
+    }
+  }
+
+  return institutionIds.filter(id => matched.has(id));
+}
+
+async function fetchSendableRecipientRows(
+  institutionIds: string[],
+  channel: Channel,
+): Promise<RecipientPreview[]> {
+  const sendableIds = await fetchInstitutionIdsWithDestination(institutionIds, channel);
+  if (sendableIds.length === 0) return [];
+
+  const institutions: { id: string; name: string }[] = [];
+  const contacts: { institution_id: string; name: string; phone: string | null; email: string | null; is_primary: boolean | null }[] = [];
+
+  for (const ids of chunkIds(sendableIds, 500)) {
+    const [{ data: institutionRows, error: instError }, { data: contactRows, error: contactError }] = await Promise.all([
+      applyNotDeleted(supabase.from('educational_institutions').select('id, name').in('id', ids)),
+      supabase.from('crm_contacts').select('institution_id, name, phone, email, is_primary').in('institution_id', ids),
+    ]);
+
+    if (instError) throw instError;
+    if (contactError) throw contactError;
+
+    institutions.push(...(institutionRows ?? []));
+    contacts.push(...((contactRows ?? []) as typeof contacts));
+  }
+
+  const institutionMap = new Map(institutions.map(inst => [inst.id, inst.name]));
+  const contactsByInstitution = new Map<string, { name: string; phone: string | null; email: string | null; is_primary: boolean | null }[]>();
+  for (const contact of contacts) {
+    const rows = contactsByInstitution.get(contact.institution_id) ?? [];
+    rows.push(contact);
+    contactsByInstitution.set(contact.institution_id, rows);
+  }
+
+  return sendableIds.map(instId => {
+    const contact = pickBestContactForChannel(contactsByInstitution.get(instId) ?? [], channel);
+    const row = {
+      institution_id: instId,
+      institution_name: institutionMap.get(instId) ?? '—',
+      contact_name: contact?.name ?? null,
+      phone: contact?.phone ?? null,
+      email: contact?.email ?? null,
+    };
+    return { ...row, available: hasRequiredDestination(row, channel) };
+  }).filter(row => row.available);
+}
+
 // ─── Stage badge ──────────────────────────────────────────────────────────────
 
-function StageBadge({ stage }: { stage: string | null }) {
+function StageBadge({ stage, color = C.gray }: { stage: string | null; color?: string }) {
   if (!stage) return null;
-  const map: Record<string, [string, string]> = {
-    'יצירת קשר': [C.textSub, C.grayBg],
-    'מעוניין': [C.accent, C.accentBg],
-    'סגירה': [C.warning, C.warningBg],
-    'זכה': [C.success, C.successBg],
-    'הפסיד': [C.danger, C.dangerBg],
-    'Customer': [C.success, C.successBg],
-  };
-  const [color, bg] = map[stage] ?? [C.gray, C.grayBg];
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: bg, color, whiteSpace: 'nowrap' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: `${color}18`, color, whiteSpace: 'nowrap' }}>
       {stage}
     </span>
   );
@@ -130,17 +236,21 @@ function Steps({ step, onGoTo }: { step: number; onGoTo: (i: number) => void }) 
 
 function ExpandableMemberTable({
   sourceKind,
+  channel,
   listId = '',
   audienceId = '',
   monthStart = '',
   sevenDaysAgo = '',
+  noReplyStageName = null,
   defaultExpanded = false,
 }: {
   sourceKind: 'list' | 'dynamic';
+  channel: Channel;
   listId?: string;
   audienceId?: string;
   monthStart?: string;
   sevenDaysAgo?: string;
+  noReplyStageName?: string | null;
   defaultExpanded?: boolean;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -150,64 +260,48 @@ function ExpandableMemberTable({
   const [hasMore, setHasMore] = useState(false);
 
   useEffect(() => {
+    setMembers([]);
+    setHasMore(false);
+    setLoaded(false);
+  }, [sourceKind, channel, listId, audienceId, monthStart, sevenDaysAgo, noReplyStageName]);
+
+  useEffect(() => {
     if (!expanded || loaded) return;
     setLoading(true);
     (async () => {
       try {
-        const LIMIT = 21;
-        let instIds: string[] = [];
+        let audienceIds: string[] = [];
 
         if (sourceKind === 'list') {
           const { data: memberRows } = await supabase
             .from('crm_list_members')
             .select('institution_id')
-            .eq('list_id', listId)
-            .limit(LIMIT);
+            .eq('list_id', listId);
           if (!memberRows || memberRows.length === 0) {
             setMembers([]); setLoaded(true); setLoading(false); return;
           }
-          setHasMore(memberRows.length === LIMIT);
-          instIds = memberRows.slice(0, 20).map(m => m.institution_id);
+          const listIds = [...new Set(memberRows.map(m => m.institution_id))];
+          audienceIds = await fetchInstitutionIds(() =>
+            applyNotDeleted(supabase.from('educational_institutions').select('id')).in('id', listIds),
+          );
         } else {
-          let q = supabase.from('educational_institutions').select('id').limit(LIMIT);
-          if (audienceId === 'new_leads')
-            q = q.eq('crm_class', 'Lead').gte('created_at', monthStart) as typeof q;
-          else if (audienceId === 'no_reply')
-            q = q.eq('crm_stage', 'מעוניין').or(`crm_last_contact_at.is.null,crm_last_contact_at.lt.${sevenDaysAgo}`) as typeof q;
-          else if (audienceId === 'renewal')
-            q = q.eq('crm_class', 'Customer') as typeof q;
-          else if (audienceId === 'all_active')
-            q = q.in('crm_class', ['Lead', 'Customer']) as typeof q;
-          const { data: rows } = await q;
-          if (!rows || rows.length === 0) {
+          audienceIds = await fetchInstitutionIds(() =>
+            applyDynamicAudienceFilter(
+              applyNotDeleted(supabase.from('educational_institutions').select('id')),
+              audienceId,
+              monthStart,
+              sevenDaysAgo,
+              noReplyStageName,
+            ),
+          );
+          if (audienceIds.length === 0) {
             setMembers([]); setLoaded(true); setLoading(false); return;
           }
-          setHasMore(rows.length === LIMIT);
-          instIds = rows.slice(0, 20).map(r => r.id);
         }
 
-        const [{ data: institutions }, { data: contacts }] = await Promise.all([
-          supabase.from('educational_institutions').select('id, name').in('id', instIds),
-          supabase.from('crm_contacts').select('institution_id, name, phone, email, is_primary').in('institution_id', instIds),
-        ]);
-
-        const contactMap = new Map<string, { name: string; phone: string | null; email: string | null }>();
-        for (const c of contacts ?? []) {
-          if (c.is_primary && !contactMap.has(c.institution_id))
-            contactMap.set(c.institution_id, { name: c.name, phone: c.phone ?? null, email: c.email ?? null });
-        }
-        for (const c of contacts ?? []) {
-          if (!contactMap.has(c.institution_id))
-            contactMap.set(c.institution_id, { name: c.name, phone: c.phone ?? null, email: c.email ?? null });
-        }
-
-        setMembers((institutions ?? []).map(inst => ({
-          institution_id: inst.id,
-          institution_name: inst.name,
-          contact_name: contactMap.get(inst.id)?.name ?? null,
-          phone: contactMap.get(inst.id)?.phone ?? null,
-          email: contactMap.get(inst.id)?.email ?? null,
-        })));
+        const sendableRows = await fetchSendableRecipientRows(audienceIds, channel);
+        setHasMore(false);
+        setMembers(sendableRows);
         setLoaded(true);
       } catch (err) {
         console.error('[ExpandableMemberTable] fetch error:', err);
@@ -215,7 +309,7 @@ function ExpandableMemberTable({
         setLoading(false);
       }
     })();
-  }, [expanded, loaded, sourceKind, listId, audienceId, monthStart, sevenDaysAgo]);
+  }, [expanded, loaded, sourceKind, channel, listId, audienceId, monthStart, sevenDaysAgo, noReplyStageName]);
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -292,6 +386,7 @@ function InstSearchBox({
       .from('educational_institutions')
       .select('id, name, city')
       .or(`name.ilike.%${q}%,city.ilike.%${q}%`)
+      .or(CRM_SOFT_DELETE_FILTER)
       .limit(12);
     setResults((data ?? []).filter(r => !selectedIds.includes(r.id)) as InstResult[]);
     setShowDropdown(true);
@@ -355,6 +450,50 @@ function InstSearchBox({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+function applyDynamicAudienceFilter(query: any, audienceId: string | undefined, monthStart: string, sevenDaysAgo: string, noReplyStageName: string | null) {
+  if (audienceId === 'new_leads')
+    return applyLeadOnly(query).gte('created_at', monthStart);
+  if (audienceId === 'no_reply')
+    return noReplyStageName
+      ? applyLeadOnly(query).eq('crm_stage', noReplyStageName).or(`crm_last_contact_at.is.null,crm_last_contact_at.lt.${sevenDaysAgo}`)
+      : applyLeadOnly(query).limit(0);
+  if (audienceId === 'renewal')
+    return applyCustomerOnly(query);
+  if (audienceId === 'all_active')
+    return applyLeadOnly(query);
+  return query;
+}
+
+function applyRecipientSelectionFilters(
+  query: any,
+  selectedStageNames: string[],
+  selectedStatusIds: string[],
+  contactStatuses: ContactStatus[],
+) {
+  query = applyLeadOnly(query);
+
+  if (selectedStageNames.length > 0) {
+    query = query.in('crm_stage', selectedStageNames);
+  }
+
+  if (selectedStatusIds.length > 0) {
+    const selectedStatuses = contactStatuses.filter((status) => selectedStatusIds.includes(status.id));
+    const legacyRisks = selectedStatuses
+      .map((status) => status.legacy_crm_risk)
+      .filter((risk): risk is string => Boolean(risk));
+
+    if (legacyRisks.length > 0) {
+      query = query.or(
+        `crm_contact_status_id.in.(${selectedStatusIds.join(',')}),and(crm_contact_status_id.is.null,crm_risk.in.(${legacyRisks.join(',')}))`,
+      );
+    } else {
+      query = query.in('crm_contact_status_id', selectedStatusIds);
+    }
+  }
+
+  return query;
+}
+
 export default function CRMBroadcast() {
   const { user } = useAuth();
 
@@ -371,8 +510,17 @@ export default function CRMBroadcast() {
   const [loadingCounts, setLoadingCounts] = useState(true);
   const [manualListId, setManualListId] = useState<string | null>(null);
   const [recipientPreview, setRecipientPreview] = useState<RecipientPreview[]>([]);
+  const [recipientStats, setRecipientStats] = useState<RecipientStats>({ total: 0, available: 0, unavailable: 0 });
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [previewExpanded, setPreviewExpanded] = useState(true);
+  const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>([]);
+  const [contactStatuses, setContactStatuses] = useState<ContactStatus[]>([]);
+  const [selectedStageNames, setSelectedStageNames] = useState<string[]>([]);
+  const [selectedStatusIds, setSelectedStatusIds] = useState<string[]>([]);
+  const [filteredCount, setFilteredCount] = useState<number | null>(null);
+  const [loadingFilteredCount, setLoadingFilteredCount] = useState(false);
+  const [loadingRecipientFilters, setLoadingRecipientFilters] = useState(true);
+  const [filterLoadError, setFilterLoadError] = useState<string | null>(null);
 
   // Manual lists state
   const [manualLists, setManualLists] = useState<CRMList[]>([]);
@@ -411,26 +559,122 @@ export default function CRMBroadcast() {
     };
   });
 
+  useEffect(() => {
+    async function loadRecipientFilters() {
+      setLoadingRecipientFilters(true);
+      setFilterLoadError(null);
+
+      let stagesResult = await supabase
+        .from('crm_pipeline_stages')
+        .select('id, name, color, order_index')
+        .eq('is_active', true)
+        .order('order_index');
+
+      if (stagesResult.error) {
+        stagesResult = await supabase
+          .from('crm_pipeline_stages')
+          .select('id, name, color, order_index')
+          .order('order_index');
+      }
+
+      const [statusesResult] = await Promise.all([
+        supabase
+          .from('crm_contact_statuses')
+          .select('id, label, color, order_index, legacy_crm_risk')
+          .eq('is_active', true)
+          .order('order_index'),
+      ]);
+
+      if (!stagesResult.error && stagesResult.data) {
+        setPipelineStages((stagesResult.data as PipelineStage[]).filter((stage) => Boolean(stage.name?.trim())));
+      }
+      if (!statusesResult.error && statusesResult.data) {
+        setContactStatuses(statusesResult.data as ContactStatus[]);
+      }
+      if (stagesResult.error || statusesResult.error) {
+        setFilterLoadError(stagesResult.error?.message ?? statusesResult.error?.message ?? 'שגיאה בטעינת הסינונים');
+      }
+      setLoadingRecipientFilters(false);
+    }
+
+    loadRecipientFilters();
+  }, []);
+
+  const noReplyStageName = pipelineStages[1]?.name ?? pipelineStages[0]?.name ?? null;
+
   // Build dynamic audience counts
   useEffect(() => {
     async function buildAudiences() {
       setLoadingCounts(true);
+      const createBaseQuery = () => applyNotDeleted(supabase.from('educational_institutions').select('id'));
       const [newLeads, noReply, renewal, allActive] = await Promise.all([
-        supabase.from('educational_institutions').select('id', { count: 'exact', head: true }).eq('crm_class', 'Lead').gte('created_at', dateStrings.monthStart),
-        supabase.from('educational_institutions').select('id', { count: 'exact', head: true }).eq('crm_stage', 'מעוניין').lt('crm_last_contact_at', dateStrings.sevenDaysAgo),
-        supabase.from('educational_institutions').select('id', { count: 'exact', head: true }).eq('crm_class', 'Customer'),
-        supabase.from('educational_institutions').select('id', { count: 'exact', head: true }).in('crm_class', ['Lead', 'Customer']),
+        countSendableInstitutions(supabase, () => applyLeadOnly(createBaseQuery()).gte('created_at', dateStrings.monthStart), channel),
+        noReplyStageName
+          ? countSendableInstitutions(
+              supabase,
+              () => applyLeadOnly(createBaseQuery())
+                .eq('crm_stage', noReplyStageName)
+                .or(`crm_last_contact_at.is.null,crm_last_contact_at.lt.${dateStrings.sevenDaysAgo}`),
+              channel,
+            )
+          : Promise.resolve(0),
+        countSendableInstitutions(supabase, () => applyCustomerOnly(createBaseQuery()), channel),
+        countSendableInstitutions(supabase, () => applyLeadOnly(createBaseQuery()), channel),
       ]);
       setAudiences([
-        { id: 'new_leads', name: 'לידים חדשים (החודש)', desc: 'הצטרפו החודש', count: newLeads.count, filter: { crm_class: 'Lead', since: dateStrings.monthStart } },
-        { id: 'no_reply', name: 'מעוניין — ללא מענה 7 ימים', desc: 'לא ענו בשבוע', count: noReply.count, filter: { crm_stage: 'מעוניין', no_reply: true } },
-        { id: 'renewal', name: 'לקוחות — פוטנציאל חידוש', desc: 'לקוחות פעילים', count: renewal.count, filter: { crm_class: 'Customer' } },
-        { id: 'all_active', name: 'כל הלידים הפעילים', desc: 'לא הפסידו', count: allActive.count, filter: { crm_class_in: ['Lead', 'Customer'] } },
+        { id: 'new_leads', name: 'לידים חדשים (החודש)', desc: 'הצטרפו החודש', count: newLeads, filter: { crm_class: CRM_LEAD_CLASS, since: dateStrings.monthStart } },
+        { id: 'no_reply', name: `${noReplyStageName ?? 'שלב'} — ללא מענה 7 ימים`, desc: 'לא ענו בשבוע', count: noReply, filter: { crm_class: CRM_LEAD_CLASS, crm_stage: noReplyStageName, no_reply: true } },
+        { id: 'renewal', name: 'לקוחות — פוטנציאל חידוש', desc: 'לקוחות פעילים', count: renewal, filter: { crm_class: CRM_CUSTOMER_CLASS } },
+        { id: 'all_active', name: 'כל הלידים הפעילים', desc: 'לידים פתוחים במערכת', count: allActive, filter: { crm_class: CRM_LEAD_CLASS } },
       ]);
       setLoadingCounts(false);
     }
     buildAudiences();
-  }, [dateStrings]);
+  }, [channel, dateStrings, noReplyStageName]);
+
+  const hasRecipientFilters = selectedStageNames.length > 0 || selectedStatusIds.length > 0;
+
+  const filteredAudience: AudienceList = {
+    id: FILTERED_AUDIENCE_ID,
+    name: 'סינון לפי CRM',
+    desc: 'שלב בפייפליין / סטטוס קשר',
+    count: filteredCount,
+    filter: {
+      crm_class: CRM_LEAD_CLASS,
+      stage_names: selectedStageNames,
+      contact_status_ids: selectedStatusIds,
+      legacy_crm_risks: contactStatuses
+        .filter(status => selectedStatusIds.includes(status.id))
+        .map(status => status.legacy_crm_risk)
+        .filter(Boolean),
+    },
+  };
+
+  useEffect(() => {
+    if (!hasRecipientFilters) {
+      setFilteredCount(null);
+      if (selList?.id === FILTERED_AUDIENCE_ID) setSelList(null);
+      return;
+    }
+
+    setLoadingFilteredCount(true);
+    async function loadFilteredCount() {
+      const count = await countSendableInstitutions(
+        supabase,
+        () => applyRecipientSelectionFilters(
+          applyNotDeleted(supabase.from('educational_institutions').select('id')),
+          selectedStageNames,
+          selectedStatusIds,
+          contactStatuses,
+        ),
+        channel,
+      );
+      setFilteredCount(count);
+      setLoadingFilteredCount(false);
+    }
+
+    loadFilteredCount();
+  }, [channel, contactStatuses, hasRecipientFilters, selectedStageNames, selectedStatusIds, selList?.id]);
 
   // Load templates filtered by channel
   useEffect(() => {
@@ -452,12 +696,28 @@ export default function CRMBroadcast() {
       .select('id, name, description')
       .order('name');
     if (!lists) { setManualLists([]); setLoadingManualLists(false); return; }
-    const { data: counts } = await supabase.from('crm_list_members').select('list_id');
+    const { data: members } = await supabase.from('crm_list_members').select('list_id, institution_id');
+    const idsByList = new Map<string, string[]>();
+    for (const member of members ?? []) {
+      const ids = idsByList.get(member.list_id) ?? [];
+      ids.push(member.institution_id);
+      idsByList.set(member.list_id, ids);
+    }
     const countMap = new Map<string, number>();
-    for (const c of counts ?? []) countMap.set(c.list_id, (countMap.get(c.list_id) ?? 0) + 1);
+    for (const list of lists) {
+      const ids = [...new Set(idsByList.get(list.id) ?? [])];
+      if (ids.length === 0) {
+        countMap.set(list.id, 0);
+        continue;
+      }
+      const activeIds = await fetchInstitutionIds(() =>
+        applyNotDeleted(supabase.from('educational_institutions').select('id')).in('id', ids),
+      );
+      countMap.set(list.id, await countInstitutionIdsWithDestination(supabase, activeIds, channel));
+    }
     setManualLists(lists.map(l => ({ ...l, member_count: countMap.get(l.id) ?? 0 })));
     setLoadingManualLists(false);
-  }, []);
+  }, [channel]);
 
   useEffect(() => { loadManualLists(); }, [loadManualLists]);
 
@@ -512,62 +772,53 @@ export default function CRMBroadcast() {
     if (step !== 2 || sent) return;
     setLoadingPreview(true);
     setRecipientPreview([]);
-    const MAX = 51;
+    setRecipientStats({ total: 0, available: 0, unavailable: 0 });
 
     async function run() {
       try {
-        let institutions: { id: string; name: string }[] = [];
+        let audienceIds: string[] = [];
 
         if (selList?.id === 'manual') {
           if (!manualListId) { setLoadingPreview(false); return; }
           const { data: members } = await supabase
             .from('crm_list_members')
             .select('institution_id')
-            .eq('list_id', manualListId)
-            .limit(MAX);
+            .eq('list_id', manualListId);
           const ids = (members ?? []).map((m: { institution_id: string }) => m.institution_id);
           if (ids.length === 0) { setRecipientPreview([]); setLoadingPreview(false); return; }
-          const { data } = await supabase.from('educational_institutions').select('id, name').in('id', ids);
-          institutions = data ?? [];
+          audienceIds = await fetchInstitutionIds(() =>
+            applyNotDeleted(supabase.from('educational_institutions').select('id')).in('id', [...new Set(ids)]),
+          );
+        } else if (selList?.id === FILTERED_AUDIENCE_ID) {
+          audienceIds = await fetchInstitutionIds(() =>
+            applyRecipientSelectionFilters(
+              applyNotDeleted(supabase.from('educational_institutions').select('id')),
+              selectedStageNames,
+              selectedStatusIds,
+              contactStatuses,
+            ),
+          );
         } else {
-          let q = supabase.from('educational_institutions').select('id, name').limit(MAX);
-          if (selList?.id === 'new_leads')
-            q = q.eq('crm_class', 'Lead').gte('created_at', dateStrings.monthStart);
-          else if (selList?.id === 'no_reply')
-            q = q.eq('crm_stage', 'מעוניין').or(`crm_last_contact_at.is.null,crm_last_contact_at.lt.${dateStrings.sevenDaysAgo}`);
-          else if (selList?.id === 'renewal')
-            q = q.eq('crm_class', 'Customer');
-          else if (selList?.id === 'all_active')
-            q = q.in('crm_class', ['Lead', 'Customer']);
-          const { data } = await q;
-          institutions = data ?? [];
+          audienceIds = await fetchInstitutionIds(() =>
+            applyDynamicAudienceFilter(
+              applyNotDeleted(supabase.from('educational_institutions').select('id')),
+              selList?.id,
+              dateStrings.monthStart,
+              dateStrings.sevenDaysAgo,
+              noReplyStageName,
+            ),
+          );
         }
 
-        if (institutions.length === 0) { setRecipientPreview([]); setLoadingPreview(false); return; }
+        if (audienceIds.length === 0) { setRecipientPreview([]); setLoadingPreview(false); return; }
 
-        const instIds = institutions.map(i => i.id);
-        const { data: contacts } = await supabase
-          .from('crm_contacts')
-          .select('id, name, phone, email, institution_id, is_primary')
-          .in('institution_id', instIds);
-
-        const contactMap = new Map<string, { name: string; phone: string | null; email: string | null }>();
-        for (const c of contacts ?? []) {
-          if (c.is_primary && !contactMap.has(c.institution_id))
-            contactMap.set(c.institution_id, { name: c.name, phone: c.phone ?? null, email: c.email ?? null });
-        }
-        for (const c of contacts ?? []) {
-          if (!contactMap.has(c.institution_id))
-            contactMap.set(c.institution_id, { name: c.name, phone: c.phone ?? null, email: c.email ?? null });
-        }
-
-        setRecipientPreview(institutions.map(inst => ({
-          institution_id: inst.id,
-          institution_name: inst.name,
-          contact_name: contactMap.get(inst.id)?.name ?? null,
-          phone: contactMap.get(inst.id)?.phone ?? null,
-          email: contactMap.get(inst.id)?.email ?? null,
-        })));
+        const sendablePreview = await fetchSendableRecipientRows(audienceIds, channel);
+        setRecipientPreview(sendablePreview);
+        setRecipientStats({
+          total: audienceIds.length,
+          available: sendablePreview.length,
+          unavailable: audienceIds.length - sendablePreview.length,
+        });
       } catch (err) {
         console.error('[CRMBroadcast] preview fetch error:', err);
       } finally {
@@ -576,7 +827,7 @@ export default function CRMBroadcast() {
     }
     run();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, sent]);
+  }, [channel, contactStatuses, dateStrings.monthStart, dateStrings.sevenDaysAgo, manualListId, selectedStageNames, selectedStatusIds, selList?.id, sent, step]);
 
   const doSend = async () => {
     if (!selList || !selTpl) return;
@@ -584,10 +835,24 @@ export default function CRMBroadcast() {
     setSending(true);
     setSendResult(null);
 
-    const audienceFilter = selList.id === 'manual' ? { list_id: manualListId } : selList.filter;
+    const audienceFilter = selList.id === 'manual'
+      ? { list_id: manualListId }
+      : selList.id === FILTERED_AUDIENCE_ID
+        ? {
+            crm_class: CRM_LEAD_CLASS,
+            stage_names: selectedStageNames,
+            contact_status_ids: selectedStatusIds,
+            legacy_crm_risks: contactStatuses
+              .filter(status => selectedStatusIds.includes(status.id))
+              .map(status => status.legacy_crm_risk)
+              .filter(Boolean),
+          }
+        : selList.filter;
     const recipientCount = selList.id === 'manual'
       ? (manualLists.find(l => l.id === manualListId)?.member_count ?? 0)
-      : (selList.count ?? 0);
+      : selList.id === FILTERED_AUDIENCE_ID
+        ? (filteredCount ?? 0)
+        : (selList.count ?? 0);
 
     const { data: broadcast, error: broadcastErr } = await supabase
       .from('crm_broadcasts')
@@ -629,7 +894,7 @@ export default function CRMBroadcast() {
 
   const reset = () => {
     setStep(0); setSelList(null); setSelTpl(null); setSent(false); setSending(false);
-    setRecipientPreview([]); setPreviewExpanded(true); setSendResult(null);
+    setRecipientPreview([]); setRecipientStats({ total: 0, available: 0, unavailable: 0 }); setPreviewExpanded(true); setSendResult(null);
     setManualListId(null);
   };
 
@@ -640,10 +905,37 @@ export default function CRMBroadcast() {
 
   const audienceCount = selList?.id === 'manual'
     ? (manualLists.find(l => l.id === manualListId)?.member_count ?? null)
-    : (selList?.count ?? null);
+    : selList?.id === FILTERED_AUDIENCE_ID
+      ? filteredCount
+      : (selList?.count ?? null);
+  const confirmationRecipientCount = loadingPreview ? null : recipientStats.available;
+  const selectedListLabel = selList?.id === 'manual'
+    ? manualLists.find(l => l.id === manualListId)?.name ?? '—'
+    : selList?.name ?? '—';
 
   // Is the "Next" button enabled?
   const canAdvance = selList !== null && (selList.id !== 'manual' || manualListId !== null);
+
+  const selectFilteredAudience = () => {
+    if (hasRecipientFilters) {
+      setSelList(filteredAudience);
+      setManualListId(null);
+    }
+  };
+
+  const toggleStageFilter = (stageName: string) => {
+    setSelectedStageNames(prev => {
+      const next = prev.includes(stageName) ? prev.filter(name => name !== stageName) : [...prev, stageName];
+      return next;
+    });
+  };
+
+  const toggleStatusFilter = (statusId: string) => {
+    setSelectedStatusIds(prev => {
+      const next = prev.includes(statusId) ? prev.filter(id => id !== statusId) : [...prev, statusId];
+      return next;
+    });
+  };
 
   return (
     <div dir="rtl" style={{ padding: '20px 24px', overflowY: 'auto', minHeight: '100%' }}>
@@ -679,9 +971,81 @@ export default function CRMBroadcast() {
       {step === 0 && (
         <div style={{ maxWidth: 680 }}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>בחר רשימת נמענים</div>
-
           {/* Unified card grid — dynamic + manual + create */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+
+            <div
+              onClick={selectFilteredAudience}
+              style={{ background: C.surface, border: `2px solid ${selList?.id === FILTERED_AUDIENCE_ID ? C.accent : C.border}`, borderRadius: 9, padding: '12px 16px', cursor: hasRecipientFilters ? 'pointer' : 'default' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 8, background: C.tealBg, color: C.teal, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flexShrink: 0 }}>#</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800 }}>סינון נמענים לפי CRM</div>
+                  <div style={{ fontSize: 12, color: C.textSub, marginTop: 2 }}>בחרו שלבי פייפליין ו/או סטטוסי קשר. הבחירה כאן הופכת אוטומטית לקהל השליחה.</div>
+                </div>
+                <div style={{ textAlign: 'center', minWidth: 58 }}>
+                  {loadingFilteredCount ? (
+                    <div style={{ fontSize: 11, color: C.textDim }}>...</div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: C.teal }}>{hasRecipientFilters ? (filteredCount ?? 0) : '-'}</div>
+                      <div style={{ fontSize: 10, color: C.textDim }}>נמענים תואמים</div>
+                    </>
+                  )}
+                </div>
+                {selList?.id === FILTERED_AUDIENCE_ID && <span style={{ color: C.accent, fontSize: 18, fontWeight: 700 }}>✓</span>}
+              </div>
+
+              <div onClick={e => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {filterLoadError && (
+                  <div style={{ padding: '8px 10px', borderRadius: 7, background: C.warningBg, color: C.warning, fontSize: 12, fontWeight: 600 }}>
+                    שגיאה בטעינת סינוני CRM: {filterLoadError}
+                  </div>
+                )}
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: C.textSub, marginBottom: 6 }}>שלב בפייפליין</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {loadingRecipientFilters && <span style={{ fontSize: 12, color: C.textDim }}>טוען שלבים...</span>}
+                    {!loadingRecipientFilters && pipelineStages.length === 0 && <span style={{ fontSize: 12, color: C.textDim }}>לא נמצאו שלבים פעילים</span>}
+                    {pipelineStages.map(stage => {
+                      const selected = selectedStageNames.includes(stage.name);
+                      return (
+                        <button
+                          key={stage.id}
+                          type="button"
+                          onClick={() => { toggleStageFilter(stage.name); setSelList({ ...filteredAudience, count: filteredCount }); setManualListId(null); }}
+                          style={{ padding: '5px 10px', borderRadius: 16, border: `1px solid ${selected ? stage.color : C.border}`, background: selected ? `${stage.color}18` : C.surface, color: selected ? stage.color : C.textSub, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          {stage.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: C.textSub, marginBottom: 6 }}>סטטוס קשר</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {loadingRecipientFilters && <span style={{ fontSize: 12, color: C.textDim }}>טוען סטטוסים...</span>}
+                    {!loadingRecipientFilters && contactStatuses.length === 0 && <span style={{ fontSize: 12, color: C.textDim }}>לא נמצאו סטטוסי קשר פעילים</span>}
+                    {contactStatuses.map(status => {
+                      const selected = selectedStatusIds.includes(status.id);
+                      return (
+                        <button
+                          key={status.id}
+                          type="button"
+                          onClick={() => { toggleStatusFilter(status.id); setSelList({ ...filteredAudience, count: filteredCount }); setManualListId(null); }}
+                          style={{ padding: '5px 10px', borderRadius: 16, border: `1px solid ${selected ? status.color : C.border}`, background: selected ? `${status.color}18` : C.surface, color: selected ? status.color : C.textSub, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          {status.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {/* Dynamic audience cards */}
             {audiences.map(l => {
@@ -714,9 +1078,11 @@ export default function CRMBroadcast() {
                   <div onClick={e => e.stopPropagation()}>
                     <ExpandableMemberTable
                       sourceKind="dynamic"
+                      channel={channel}
                       audienceId={l.id}
                       monthStart={dateStrings.monthStart}
                       sevenDaysAgo={dateStrings.sevenDaysAgo}
+                      noReplyStageName={noReplyStageName}
                     />
                   </div>
                 </div>
@@ -782,7 +1148,7 @@ export default function CRMBroadcast() {
 
                       {/* Expandable contacts */}
                       <div onClick={e => e.stopPropagation()}>
-                        <ExpandableMemberTable sourceKind="list" listId={list.id} />
+                        <ExpandableMemberTable sourceKind="list" channel={channel} listId={list.id} />
                       </div>
 
                       {/* Add members */}
@@ -914,7 +1280,7 @@ export default function CRMBroadcast() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
                     <span style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</span>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <StageBadge stage={t.stage} />
+                      <StageBadge stage={t.stage} color={pipelineStages.find(stage => stage.name === t.stage)?.color} />
                       {selTpl?.id === t.id && <span style={{ color: C.accent, fontWeight: 700 }}>✓</span>}
                     </div>
                   </div>
@@ -948,7 +1314,7 @@ export default function CRMBroadcast() {
               {/* Banner */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: C.aiBg, border: `1px solid ${C.ai}20`, borderRadius: 8, marginBottom: 14, fontSize: 13 }}>
                 <span style={{ color: C.ai, flex: 1 }}>
-                  עומד לשלוח <b>{channel === 'whatsapp' ? 'וואטסאפ' : 'מייל'}</b> ל-<b>{audienceCount ?? '?'} נמענים</b>
+                  עומד לשלוח <b>{channel === 'whatsapp' ? 'וואטסאפ' : 'מייל'}</b> ל-<b>{confirmationRecipientCount ?? '?'} נמענים</b>
                 </span>
               </div>
 
@@ -956,7 +1322,7 @@ export default function CRMBroadcast() {
               <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '16px 20px', marginBottom: 14 }}>
                 {([
                   ['ערוץ', channel === 'whatsapp' ? '📱 וואטסאפ' : '📧 מייל'],
-                  ['רשימה', selList?.id === 'manual' ? `${manualLists.find(l => l.id === manualListId)?.name ?? '—'} (${audienceCount ?? '?'})` : `${selList?.name} (${selList?.count ?? '?'})`],
+                  ['רשימה', `${selectedListLabel} (${confirmationRecipientCount ?? '?'})`],
                   ['תבנית', selTpl?.name ?? '—'],
                   ['שליחה', 'מיידית'],
                 ] as const).map(([k, v], i) => (
@@ -965,6 +1331,12 @@ export default function CRMBroadcast() {
                     <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{v}</span>
                   </div>
                 ))}
+                <div style={{ display: 'flex', gap: 10, padding: '7px 0', borderTop: `1px solid ${C.borderLight}` }}>
+                  <span style={{ width: 70, fontSize: 12, color: C.textSub, fontWeight: 500 }}>נמענים</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: recipientStats.unavailable > 0 ? C.warning : C.success }}>
+                    {loadingPreview ? 'טוען...' : `${recipientStats.available} ניתנים לשליחה / ${recipientStats.unavailable} ללא פרטי קשר`}
+                  </span>
+                </div>
               </div>
 
               {/* Message preview */}
@@ -979,7 +1351,7 @@ export default function CRMBroadcast() {
                   style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', padding: '6px 0', userSelect: 'none' }}
                 >
                   <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>
-                    נמענים ({loadingPreview ? '...' : Math.min(recipientPreview.length, 50)}{recipientPreview.length > 50 ? '+' : ''})
+                    נמענים ({loadingPreview ? '...' : recipientPreview.length})
                   </span>
                   <span style={{ fontSize: 10, color: C.textSub, display: 'inline-block', transform: previewExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▼</span>
                 </div>
@@ -1004,10 +1376,10 @@ export default function CRMBroadcast() {
                               </tr>
                             </thead>
                             <tbody>
-                              {recipientPreview.slice(0, 50).map((row, i) => (
+                              {recipientPreview.map((row, i) => (
                                 <tr
                                   key={row.institution_id}
-                                  style={{ borderBottom: i < Math.min(recipientPreview.length, 50) - 1 ? `1px solid ${C.borderLight}` : 'none', background: i % 2 === 0 ? C.surface : C.bg }}
+                                  style={{ borderBottom: i < recipientPreview.length - 1 ? `1px solid ${C.borderLight}` : 'none', background: i % 2 === 0 ? C.surface : C.bg }}
                                 >
                                   <td style={{ padding: '6px 12px', fontWeight: 500 }}>{row.institution_name}</td>
                                   <td style={{ padding: '6px 12px', color: row.contact_name ? C.text : C.textDim }}>{row.contact_name ?? 'אין איש קשר'}</td>
@@ -1017,11 +1389,6 @@ export default function CRMBroadcast() {
                             </tbody>
                           </table>
                         </div>
-                        {recipientPreview.length > 50 && (
-                          <div style={{ padding: '7px 12px', fontSize: 11, color: C.textDim, textAlign: 'center', borderTop: `1px solid ${C.borderLight}`, background: C.bg }}>
-                            ועוד {recipientPreview.length - 50} נמענים נוספים...
-                          </div>
-                        )}
                       </>
                     )}
                   </div>
@@ -1034,8 +1401,8 @@ export default function CRMBroadcast() {
                 </button>
                 <button
                   onClick={doSend}
-                  disabled={sending}
-                  style={{ flex: 1, padding: '7px 0', borderRadius: 6, border: 'none', background: C.accent, color: '#fff', fontSize: 13, fontWeight: 600, cursor: sending ? 'not-allowed' : 'pointer', opacity: sending ? 0.7 : 1 }}
+                  disabled={sending || (!loadingPreview && recipientStats.available === 0)}
+                  style={{ flex: 1, padding: '7px 0', borderRadius: 6, border: 'none', background: (!loadingPreview && recipientStats.available === 0) ? C.border : C.accent, color: '#fff', fontSize: 13, fontWeight: 600, cursor: sending || (!loadingPreview && recipientStats.available === 0) ? 'not-allowed' : 'pointer', opacity: sending ? 0.7 : 1 }}
                 >
                   {sending ? '⟳ שולח...' : '📤 שלח עכשיו'}
                 </button>

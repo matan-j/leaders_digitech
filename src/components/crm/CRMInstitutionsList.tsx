@@ -6,6 +6,7 @@ import Papa from 'papaparse';
 import { supabase } from '@/integrations/supabase/client';
 import AssignInstructorModal from './AssignInstructorModal';
 import type { CRMTab } from '@/pages/CRM';
+import { CRM_CUSTOMER_CLASS, CRM_LEAD_CLASS, CRM_SOFT_DELETE_FILTER } from '@/lib/crmQueryHelpers';
 
 const C = {
   bg: '#F8F9FB',
@@ -30,24 +31,6 @@ const C = {
 };
 
 const CLASSES = ['Lead', 'Customer', 'Past Customer'] as const;
-
-// ── badge helpers ─────────────────────────────────────────────
-
-const stageBadge = (s: string) => {
-  const m: Record<string, [string, string]> = {
-    'יצירת קשר': [C.textSub, C.bg],
-    'מעוניין':   [C.accent,  C.accentBg],
-    'סגירה':     [C.warning, C.warningBg],
-    'זכה':       [C.success, C.successBg],
-    'הפסיד':     [C.danger,  C.dangerBg],
-  };
-  const [color, bg] = m[s] ?? [C.textSub, C.bg];
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: bg, color }}>
-      {s}
-    </span>
-  );
-};
 
 const Av = ({ name, size = 22, color = C.accent, bg = C.accentBg }: { name: string; size?: number; color?: string; bg?: string }) => (
   <div style={{ width: size, height: size, borderRadius: '50%', background: bg, color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size / 2.6, fontWeight: 700, flexShrink: 0 }}>
@@ -596,7 +579,7 @@ const CsvModal = ({ onClose, onImportDone, pipelineStageNames }: CsvModalProps) 
       try {
         const { data: inst, error: instErr } = await supabase
           .from('educational_institutions')
-          .insert({ name: row['שם מוסד'], city: row['עיר'] || null, crm_class: 'Lead', crm_stage: defaultCrmStage })
+          .insert({ name: row['שם מוסד'], city: row['עיר'] || null, crm_class: CRM_LEAD_CLASS, crm_stage: defaultCrmStage })
           .select('id')
           .single();
 
@@ -804,13 +787,15 @@ interface AddInstitutionModalProps {
   onClose: () => void;
   onAdded: () => void;
   pipelineStageNames: string[];
+  mode: 'leads' | 'customers';
 }
 
-const AddInstitutionModal = ({ onClose, onAdded, pipelineStageNames }: AddInstitutionModalProps) => {
+const AddInstitutionModal = ({ onClose, onAdded, pipelineStageNames, mode }: AddInstitutionModalProps) => {
   const defaultCrmStage = pipelineStageNames[0] ?? '';
+  const defaultCrmClass = mode === 'customers' ? CRM_CUSTOMER_CLASS : CRM_LEAD_CLASS;
   const [name, setName] = useState('');
   const [city, setCity] = useState('');
-  const [crmClass, setCrmClass] = useState<string>('Lead');
+  const [crmClass, setCrmClass] = useState<string>(defaultCrmClass);
   const [crmStage, setCrmStage] = useState<string>(defaultCrmStage);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -826,9 +811,10 @@ const AddInstitutionModal = ({ onClose, onAdded, pipelineStageNames }: AddInstit
   const handleSubmit = async () => {
     if (!name.trim()) { setError('שם מוסד הוא שדה חובה'); return; }
     setSaving(true);
+    const safeCrmClass = crmClass || defaultCrmClass || CRM_LEAD_CLASS;
     const { error: dbErr } = await supabase
       .from('educational_institutions')
-      .insert({ name: name.trim(), city: city.trim() || null, crm_class: crmClass, crm_stage: crmStage || null });
+      .insert({ name: name.trim(), city: city.trim() || null, crm_class: safeCrmClass, crm_stage: crmStage || null });
     setSaving(false);
     if (dbErr) { setError(dbErr.message); return; }
     onAdded();
@@ -860,7 +846,7 @@ const AddInstitutionModal = ({ onClose, onAdded, pipelineStageNames }: AddInstit
           <div style={{ display: 'flex', gap: 12 }}>
             <div style={{ flex: 1 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: C.textSub, display: 'block', marginBottom: 5 }}>סיווג</label>
-              <select value={crmClass} onChange={(e) => setCrmClass(e.target.value)} style={{ ...inputStyle }}>
+              <select value={crmClass} disabled={mode === 'leads'} onChange={(e) => setCrmClass(e.target.value || defaultCrmClass)} style={{ ...inputStyle, ...(mode === 'leads' ? { background: C.bg, color: C.textSub } : {}) }}>
                 {CLASSES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
@@ -1025,18 +1011,20 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
         instructor:crm_assigned_instructor_id (id, full_name),
         contacts:crm_contacts (id, name, phone, role, is_primary)
       `)
-      .eq('is_deleted', false);
+      .or(CRM_SOFT_DELETE_FILTER);
 
     if (mode === 'leads') {
-      query = query.or('crm_class.eq.Lead,crm_class.is.null');
+      query = query.eq('crm_class', CRM_LEAD_CLASS);
     } else {
-      query = query.eq('crm_class', 'Customer');
+      query = query.eq('crm_class', CRM_CUSTOMER_CLASS);
     }
 
     const { data, error } = await query;
 
     if (!error && data) {
-      const institutionIds = data.map((d: any) => d.id);
+      const normalizedData = data;
+
+      const institutionIds = normalizedData.map((d: any) => d.id);
 
       // Fetch primary contact phones in one query
       const phoneMap: Record<string, string | null> = {};
@@ -1056,7 +1044,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
       }
 
       setRows(
-        data.map((d: any) => ({
+        normalizedData.map((d: any) => ({
           ...d,
           contact_status: Array.isArray(d.contact_status) ? d.contact_status[0] ?? null : d.contact_status,
           instructor: Array.isArray(d.instructor) ? d.instructor[0] ?? null : d.instructor,
@@ -1095,7 +1083,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
   const filtered = sortRows(
     rows.filter((r) => {
       if (search && !r.name.includes(search) && !(r.city ?? '').includes(search)) return false;
-      if (filterClass !== 'הכל' && r.crm_class !== filterClass) return false;
+      if (filterClass !== 'הכל' && (mode === 'leads' ? (r.crm_class ?? CRM_LEAD_CLASS) : r.crm_class) !== filterClass) return false;
       if (mode === 'leads' && filterStage !== 'הכל' && getEffectiveStage(r) !== filterStage) return false;
       if (filterCity !== 'הכל' && r.city !== filterCity) return false;
       if (filterInstructor === 'לא משויך' && r.instructor) return false;
@@ -1348,7 +1336,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
   return (
     <div dir="rtl" style={{ padding: '20px 24px', overflowY: 'auto' }}>
       {showCsv && <CsvModal onClose={() => setShowCsv(false)} onImportDone={fetchInstitutions} pipelineStageNames={pipelineStageNames} />}
-      {showAddInstitution && <AddInstitutionModal onClose={() => setShowAddInstitution(false)} onAdded={fetchInstitutions} pipelineStageNames={pipelineStageNames} />}
+      {showAddInstitution && <AddInstitutionModal onClose={() => setShowAddInstitution(false)} onAdded={fetchInstitutions} pipelineStageNames={pipelineStageNames} mode={mode} />}
       {assignTarget && (
         <AssignInstructorModal
           institutionId={assignTarget.id}

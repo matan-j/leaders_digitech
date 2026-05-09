@@ -53,15 +53,12 @@ Deno.serve(async (req) => {
       old_stage: string | null
     }
 
-    console.log('TRIGGER RECEIVED', { institution_id, new_stage, old_stage })
-
     if (!institution_id || !new_stage) {
       throw new Error('institution_id and new_stage are required')
     }
 
     // Skip if stage hasn't changed
     if (old_stage === new_stage) {
-      console.log('STAGES EQUAL, SKIPPING')
       return new Response(JSON.stringify({ ok: true, skipped: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -76,7 +73,6 @@ Deno.serve(async (req) => {
       .eq('is_active', true)
 
     if (rulesErr) throw rulesErr
-    console.log('RULES FOUND', rules?.length)
     if (!rules || rules.length === 0) {
       return new Response(JSON.stringify({ ok: true, fired: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -111,8 +107,6 @@ Deno.serve(async (req) => {
       contact = fallback ?? null
     }
 
-    console.log('CONTACT', contact)
-
     const vars = {
       institutionName: inst.name ?? '',
       contactName: contact?.name ?? inst.name ?? '',
@@ -145,7 +139,6 @@ Deno.serve(async (req) => {
       const message = replaceVariables(tmpl.body, vars)
 
       try {
-        console.log('SENDING', rule.channel, contact?.phone)
         let communicationId: string | null = null
         if (rule.channel === 'whatsapp' && contact?.phone) {
           communicationId = await invokeCrmGhl(supabase, {

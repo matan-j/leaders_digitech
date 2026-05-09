@@ -34,6 +34,76 @@ interface LogEntry {
   error_message: string | null
 }
 
+const SOFT_DELETE_FILTER = 'is_deleted.eq.false,is_deleted.is.null'
+const CRM_LEAD_CLASS = 'Lead'
+const CRM_CUSTOMER_CLASS = 'Customer'
+
+function applyRecipientFilters(
+  query: any,
+  audienceFilter: Record<string, unknown>,
+) {
+  const stageNames = Array.isArray(audienceFilter.stage_names)
+    ? audienceFilter.stage_names.filter((stage): stage is string => typeof stage === 'string' && stage.trim().length > 0)
+    : []
+  const statusIds = Array.isArray(audienceFilter.contact_status_ids)
+    ? audienceFilter.contact_status_ids.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+    : []
+  const legacyRisks = Array.isArray(audienceFilter.legacy_crm_risks)
+    ? audienceFilter.legacy_crm_risks.filter((risk): risk is string => typeof risk === 'string' && risk.trim().length > 0)
+    : []
+
+  query = query.eq('crm_class', CRM_LEAD_CLASS)
+
+  if (stageNames.length > 0) query = query.in('crm_stage', stageNames)
+  if (statusIds.length > 0 && legacyRisks.length > 0) {
+    query = query.or(
+      `crm_contact_status_id.in.(${statusIds.join(',')}),and(crm_contact_status_id.is.null,crm_risk.in.(${legacyRisks.join(',')}))`,
+    )
+  } else if (statusIds.length > 0) {
+    query = query.in('crm_contact_status_id', statusIds)
+  }
+
+  return query
+}
+
+function uniqueInstitutions(institutions: Institution[]): Institution[] {
+  const seen = new Set<string>()
+  return institutions.filter((institution) => {
+    if (seen.has(institution.id)) return false
+    seen.add(institution.id)
+    return true
+  })
+}
+
+async function resolveNoReplyStageName(
+  supabase: ReturnType<typeof createClient>,
+  audienceFilter: Record<string, unknown>,
+): Promise<string | null> {
+  const requestedStage = typeof audienceFilter.crm_stage === 'string' ? audienceFilter.crm_stage.trim() : ''
+  if (requestedStage) return requestedStage
+
+  let result = await supabase
+    .from('crm_pipeline_stages')
+    .select('name, order_index')
+    .eq('is_active', true)
+    .order('order_index')
+
+  if (result.error) {
+    result = await supabase
+      .from('crm_pipeline_stages')
+      .select('name, order_index')
+      .order('order_index')
+  }
+
+  if (result.error) throw result.error
+
+  const stages = ((result.data ?? []) as { name: string | null }[])
+    .map((stage) => stage.name?.trim())
+    .filter((name): name is string => Boolean(name))
+
+  return stages[1] ?? stages[0] ?? null
+}
+
 // ── Variable replacement ───────────────────────────────────────────────────────
 
 function replaceVars(
@@ -86,26 +156,38 @@ async function resolveRecipients(
       .from('educational_institutions')
       .select('id, name, crm_interests')
       .in('id', ids)
+      .or(SOFT_DELETE_FILTER)
     if (error) throw error
-    return (data ?? []) as Institution[]
+    return uniqueInstitutions((data ?? []) as Institution[])
   }
 
-  let query = supabase.from('educational_institutions').select('id, name, crm_interests')
+  let query = supabase.from('educational_institutions').select('id, name, crm_interests').or(SOFT_DELETE_FILTER)
 
   switch (audienceType) {
+    case 'filtered':
+      query = applyRecipientFilters(query, audienceFilter)
+      break
     case 'new_leads':
-      query = query.eq('crm_class', 'Lead').gte('created_at', monthStart.toISOString())
+      query = query.eq('crm_class', CRM_LEAD_CLASS).gte('created_at', monthStart.toISOString())
       break
     case 'no_reply':
-      query = query
-        .eq('crm_stage', 'מעוניין')
-        .or(`crm_last_contact_at.is.null,crm_last_contact_at.lt.${sevenDaysAgo}`)
+      {
+        const noReplyStageName = await resolveNoReplyStageName(supabase, audienceFilter)
+        query = query.eq('crm_class', CRM_LEAD_CLASS)
+        if (!noReplyStageName) {
+          query = query.limit(0)
+        } else {
+          query = query
+            .eq('crm_stage', noReplyStageName)
+            .or(`crm_last_contact_at.is.null,crm_last_contact_at.lt.${sevenDaysAgo}`)
+        }
+      }
       break
     case 'renewal':
-      query = query.eq('crm_class', 'Customer')
+      query = query.eq('crm_class', CRM_CUSTOMER_CLASS)
       break
     case 'all_active':
-      query = query.in('crm_class', ['Lead', 'Customer'])
+      query = query.eq('crm_class', CRM_LEAD_CLASS)
       break
     default:
       return []
@@ -113,31 +195,30 @@ async function resolveRecipients(
 
   const { data, error } = await query
   if (error) throw error
-  return (data ?? []) as Institution[]
+  return uniqueInstitutions((data ?? []) as Institution[])
 }
 
 // ── Get primary contact for institution ────────────────────────────────────────
 
 async function getPrimaryContact(
   supabase: ReturnType<typeof createClient>,
-  institutionId: string
+  institutionId: string,
+  channel: 'whatsapp' | 'email'
 ): Promise<Contact | null> {
-  const { data: primary } = await supabase
-    .from('crm_contacts')
-    .select('id, name, phone, email')
-    .eq('institution_id', institutionId)
-    .eq('is_primary', true)
-    .limit(1)
-    .maybeSingle()
-  if (primary) return primary as Contact
+  const hasDestination = (contact: Contact | null) => (
+    channel === 'whatsapp'
+      ? Boolean(contact?.phone?.trim())
+      : Boolean(contact?.email?.trim())
+  )
 
-  const { data: fallback } = await supabase
+  const { data: contacts } = await supabase
     .from('crm_contacts')
     .select('id, name, phone, email')
     .eq('institution_id', institutionId)
-    .limit(1)
-    .maybeSingle()
-  return (fallback ?? null) as Contact | null
+    .order('is_primary', { ascending: false })
+
+  const rows = (contacts ?? []) as Contact[]
+  return rows.find(hasDestination) ?? rows[0] ?? null
 }
 
 // ── Main handler ───────────────────────────────────────────────────────────────
@@ -181,7 +262,6 @@ Deno.serve(async (req) => {
       broadcast.audience_type,
       (broadcast.audience_filter ?? {}) as Record<string, unknown>
     )
-    console.log(`[crm-broadcast-send] ${recipients.length} recipients for broadcast ${broadcast_id}`)
 
     // 4. Send to each recipient
     const logs: LogEntry[] = []
@@ -190,7 +270,7 @@ Deno.serve(async (req) => {
     let skippedCount = 0
 
     for (const institution of recipients) {
-      const contact = await getPrimaryContact(supabase, institution.id)
+      const contact = await getPrimaryContact(supabase, institution.id, broadcast.channel)
 
       if (!contact) {
         logs.push({

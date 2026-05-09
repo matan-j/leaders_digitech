@@ -93,11 +93,9 @@ const classBadge = (c: string | null) => {
   return <Badge label={c} color={col} bg={bg} />;
 };
 
-const stageBadge = (s: string | null) => {
+const stageBadge = (s: string | null, color = C.textSub) => {
   if (!s) return null;
-  const m: Record<string, [string, string]> = { 'יצירת קשר': [C.textSub, C.bg], 'מעוניין': [C.accent, C.accentBg], 'סגירה': [C.warning, C.warningBg], 'זכה': [C.success, C.successBg], 'הפסיד': [C.danger, C.dangerBg] };
-  const [col, bg] = m[s] ?? [C.textSub, C.bg];
-  return <Badge label={s} color={col} bg={bg} />;
+  return <Badge label={s} color={color} bg={`${color}18`} />;
 };
 
 const riskBadge = (r: string | null) => {
@@ -689,9 +687,8 @@ const TabContacts = ({ contacts, onAdd, onEdit, onDelete }: { contacts: Contact[
 );
 
 // ── tab: הזדמנויות ────────────────────────────────────────────
-const TabOpportunities = ({ opportunities, contacts, onAdd, onEdit, onDelete }: { opportunities: Opportunity[]; contacts: Contact[]; onAdd: () => void; onEdit: (o: Opportunity) => void; onDelete: (id: string) => void }) => {
+const TabOpportunities = ({ opportunities, contacts, stageColors, onAdd, onEdit, onDelete }: { opportunities: Opportunity[]; contacts: Contact[]; stageColors: Record<string, string>; onAdd: () => void; onEdit: (o: Opportunity) => void; onDelete: (id: string) => void }) => {
   const contactMap = Object.fromEntries(contacts.map(c => [c.id, c.name]));
-  const STAGE_COLORS: Record<string, [string, string]> = { 'יצירת קשר': [C.textSub, C.bg], 'מעוניין': [C.accent, C.accentBg], 'סגירה': [C.warning, C.warningBg], 'זכה': [C.success, C.successBg], 'הפסיד': [C.danger, C.dangerBg] };
 
   return (
     <div>
@@ -704,12 +701,12 @@ const TabOpportunities = ({ opportunities, contacts, onAdd, onEdit, onDelete }: 
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {opportunities.map(o => {
-            const [sc, sbg] = STAGE_COLORS[o.stage] ?? [C.textSub, C.bg];
+            const sc = stageColors[o.stage] ?? C.textSub;
             return (
               <div key={o.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, padding: '12px 16px', borderRight: `4px solid ${sc}` }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>{o.name}</span>
-                  <Badge label={o.stage} color={sc} bg={sbg} />
+                  <Badge label={o.stage} color={sc} bg={`${sc}18`} />
                   {o.value != null && <span style={{ fontSize: 13, fontWeight: 800, color: C.success }}>₪{Number(o.value).toLocaleString('he-IL')}</span>}
                   <Btn variant="ghost" sm onClick={() => onEdit(o)}>✏️</Btn>
                   <Btn variant="danger" sm onClick={() => {
@@ -1318,16 +1315,14 @@ const SendEmailModal = ({ contacts, institutionName, institutionId, onClose, onS
   }, [templateId, contactId, selectedTemplate, selectedContact, institutionName]);
 
   const send = async () => {
-    console.log('sending email...', { email: selectedContact?.email, bodyLength: body.trim().length });
     if (!selectedContact?.email || !body.trim()) return;
     setSending(true); setError('');
     try {
-      console.log('guard passed, calling callGHL...')
       const vars = { שם: selectedContact.name, מוסד: institutionName, שם_מוסד: institutionName };
       const finalBody = replaceVariables(replaceVars(body, vars), selectedContact, institutionName, senderName);
       const finalSubject = replaceVariables(replaceVars(subject || '(ללא נושא)', vars), selectedContact, institutionName, senderName);
       const { data: { user } } = await supabase.auth.getUser();
-      const result = await callGHL('send_email', {
+      await callGHL('send_email', {
         email: selectedContact.email,
         subject: finalSubject,
         body: finalBody,
@@ -1338,7 +1333,6 @@ const SendEmailModal = ({ contacts, institutionName, institutionId, onClose, onS
         template_id: templateId || null,
         skip_activity_log: true,
       });
-      console.log('callGHL result:', result)
       const { data: act } = await supabase.from('crm_activities').insert([{
         institution_id: institutionId, type: 'מייל', user_id: user!.id,
         contact_id: contactId || null, summary: `${subject ? subject + ': ' : ''}${body.slice(0, 160)}`, status: 'Completed',
@@ -1391,6 +1385,7 @@ const CRMInstitution = () => {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [communications, setCommunications] = useState<Communication[]>([]);
   const [pipelineStageNames, setPipelineStageNames] = useState<string[]>([]);
+  const [stageColors, setStageColors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   const [showAddContact, setShowAddContact] = useState(false);
@@ -1406,14 +1401,20 @@ const CRMInstitution = () => {
   useEffect(() => {
     supabase
       .from('crm_pipeline_stages')
-      .select('name')
+      .select('name, color')
       .order('order_index')
       .then(({ data }) => {
+        const stages = (data ?? []) as { name: string | null; color: string | null }[];
         setPipelineStageNames(
-          (data ?? [])
-            .map((stage: { name: string }) => stage.name?.trim())
+          stages
+            .map((stage) => stage.name?.trim())
             .filter((name): name is string => Boolean(name)),
         );
+        setStageColors(Object.fromEntries(
+          stages
+            .map((stage) => [stage.name?.trim(), stage.color ?? C.textSub] as const)
+            .filter((entry): entry is [string, string] => Boolean(entry[0])),
+        ));
       });
   }, []);
 
@@ -1529,7 +1530,7 @@ const CRMInstitution = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
                 <span style={{ fontSize: 18, fontWeight: 800 }}>{institution.name}</span>
                 {classBadge(institution.crm_class)}
-                {stageBadge(institution.crm_stage)}
+                {stageBadge(institution.crm_stage, institution.crm_stage ? stageColors[institution.crm_stage] : undefined)}
                 {riskBadge(institution.crm_risk)}
               </div>
               <div style={{ display: 'flex', gap: 14, fontSize: 12, color: C.textSub, flexWrap: 'wrap' }}>
@@ -1599,7 +1600,7 @@ const CRMInstitution = () => {
               <TabContacts contacts={contacts} onAdd={() => setShowAddContact(true)} onEdit={setEditContact} onDelete={deleteContact} />
             </TabsContent>
             <TabsContent value="opportunities">
-              <TabOpportunities opportunities={opportunities} contacts={contacts} onAdd={() => setShowAddOpportunity(true)} onEdit={setEditOpportunity} onDelete={deleteOpportunity} />
+              <TabOpportunities opportunities={opportunities} contacts={contacts} stageColors={stageColors} onAdd={() => setShowAddOpportunity(true)} onEdit={setEditOpportunity} onDelete={deleteOpportunity} />
             </TabsContent>
             <TabsContent value="activity">
               <TabActivity activities={activities} contacts={contacts} opportunities={opportunities} onLog={() => setShowLogActivity(true)} onEdit={setEditActivity} onDelete={deleteActivity} />

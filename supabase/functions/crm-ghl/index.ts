@@ -222,7 +222,6 @@ async function sendWhatsApp(payload: {
   const providerData = await res.json()
   const providerMessageId = typeof providerData?.idMessage === 'string' ? providerData.idMessage : null
   const sentAt = new Date().toISOString()
-  console.log('[crm-ghl] WhatsApp sent:', providerData)
 
   if (payload.institution_id) {
     const activityId = payload.skip_activity_log ? null : await logActivity({

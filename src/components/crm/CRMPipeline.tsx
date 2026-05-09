@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { CRM_CUSTOMER_CLASS, CRM_LEAD_CLASS, CRM_SOFT_DELETE_FILTER } from '@/lib/crmQueryHelpers';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -545,15 +546,22 @@ export default function CRMPipeline() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    const [{ data, error }, customerCountRes] = await Promise.all([
+      supabase
       .from('educational_institutions')
       .select(`
         id, name, city, crm_stage, crm_class, crm_last_contact_at, crm_potential,
         instructor:crm_assigned_instructor_id (id, full_name)
       `)
-      .or('is_deleted.eq.false,is_deleted.is.null')
-      .or('crm_class.eq.Lead,crm_class.is.null')
-      .order('name');
+      .or(CRM_SOFT_DELETE_FILTER)
+      .eq('crm_class', CRM_LEAD_CLASS)
+      .order('name'),
+      supabase
+        .from('educational_institutions')
+        .select('id', { count: 'exact', head: true })
+        .or(CRM_SOFT_DELETE_FILTER)
+        .eq('crm_class', CRM_CUSTOMER_CLASS),
+    ]);
 
     if (!error && data) {
       const rows = data as unknown as InstitutionRow[];
@@ -561,8 +569,8 @@ export default function CRMPipeline() {
 
       const pipelineValue = rows.reduce((s, r) => s + (r.crm_potential ?? 0), 0);
       const totalCount = rows.length;
-      const wonCount = rows.filter((r) => r.crm_class === 'Customer').length;
-      const winRate = totalCount > 0 ? (wonCount / totalCount) * 100 : 0;
+      const wonCount = customerCountRes.count ?? 0;
+      const winRate = totalCount + wonCount > 0 ? (wonCount / (totalCount + wonCount)) * 100 : 0;
       setKpis({ pipelineValue, totalCount, wonCount, winRate });
 
       const instrMap = new Map<string, string>();
@@ -593,8 +601,8 @@ export default function CRMPipeline() {
     setInstitutions((prev) => prev.map((r) => r.id === id ? { ...r, crm_stage: targetStageName } : r));
 
     const patch: Record<string, string> = { crm_stage: targetStageName };
-    if (targetStage?.is_won) patch.crm_class = 'Customer';
-    if (targetStage?.is_lost) patch.crm_class = 'Lead';
+    if (targetStage?.is_won) patch.crm_class = CRM_CUSTOMER_CLASS;
+    if (targetStage?.is_lost) patch.crm_class = CRM_LEAD_CLASS;
 
     const { error } = await supabase.from('educational_institutions').update(patch).eq('id', id);
     if (error) { load(); return; }

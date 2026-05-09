@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { callCrmAI } from '@/hooks/useCrmAI';
 import type { CRMTab } from '@/pages/CRM';
+import { CRM_LEAD_CLASS, CRM_CUSTOMER_CLASS, CRM_SOFT_DELETE_FILTER } from '@/lib/crmQueryHelpers';
 
 const C = {
   bg: '#F8F9FB',
@@ -42,20 +43,12 @@ const Av = ({ name, size = 28 }: { name: string; size?: number }) => (
   </div>
 );
 
-const stageBadge = (s: string) => {
-  const m: Record<string, [string, string]> = {
-    'יצירת קשר': [C.textSub, C.bg],
-    'מעוניין':   [C.accent,  C.accentBg],
-    'סגירה':     [C.warning, C.warningBg],
-    'זכה':       [C.success, C.successBg],
-    'הפסיד':     [C.danger,  C.dangerBg],
-  };
-  const [color, bg] = m[s] || [C.textSub, C.bg];
+const stageBadge = (s: string, color = C.textSub) => {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center',
       padding: '2px 8px', borderRadius: 20,
-      fontSize: 11, fontWeight: 600, background: bg, color,
+      fontSize: 11, fontWeight: 600, background: `${color}18`, color,
     }}>
       {s}
     </span>
@@ -85,6 +78,7 @@ interface HotLead {
 
 interface PipelineStage {
   name: string;
+  color: string | null;
   order_index: number;
   is_won: boolean;
   is_lost: boolean;
@@ -156,6 +150,7 @@ const CRMDashboard = ({ setTab, onOpenCsvImport }: Props) => {
   });
   const [hotLeads, setHotLeads] = useState<HotLead[]>([]);
   const [loadingKpis, setLoadingKpis] = useState(true);
+  const [stageColors, setStageColors] = useState<Record<string, string>>({});
 
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSections, setAiSections] = useState<AISection[] | null>(null);
@@ -165,10 +160,21 @@ const CRMDashboard = ({ setTab, onOpenCsvImport }: Props) => {
     const load = async () => {
       setLoadingKpis(true);
       try {
-        const [instRes, oppRes, followRes, stageRes] = await Promise.all([
+        const [instRes, leadCountRes, customerCountRes, oppRes, followRes, stageRes] = await Promise.all([
           supabase
             .from('educational_institutions')
-            .select('crm_class, crm_stage'),
+            .select('crm_class, crm_stage')
+            .or(CRM_SOFT_DELETE_FILTER),
+          supabase
+            .from('educational_institutions')
+            .select('id', { count: 'exact', head: true })
+            .or(CRM_SOFT_DELETE_FILTER)
+            .eq('crm_class', CRM_LEAD_CLASS),
+          supabase
+            .from('educational_institutions')
+            .select('id', { count: 'exact', head: true })
+            .or(CRM_SOFT_DELETE_FILTER)
+            .eq('crm_class', CRM_CUSTOMER_CLASS),
           supabase
             .from('crm_opportunities')
             .select('status, value')
@@ -179,7 +185,7 @@ const CRMDashboard = ({ setTab, onOpenCsvImport }: Props) => {
             .eq('status', 'pending'),
           supabase
             .from('crm_pipeline_stages')
-            .select('name, order_index, is_won, is_lost')
+            .select('name, color, order_index, is_won, is_lost')
             .order('order_index'),
         ]);
 
@@ -187,7 +193,7 @@ const CRMDashboard = ({ setTab, onOpenCsvImport }: Props) => {
         const opps = oppRes.data ?? [];
         const followups = followRes.data ?? [];
         const stages = (stageRes.data ?? []) as PipelineStage[];
-        const defaultStageName = stages[0]?.name;
+        setStageColors(Object.fromEntries(stages.map((s) => [s.name, s.color ?? C.textSub])));
         const wonStageNames = new Set(stages.filter((s) => s.is_won).map((s) => s.name));
         const lostStageNames = new Set(stages.filter((s) => s.is_lost).map((s) => s.name));
 
@@ -202,9 +208,9 @@ const CRMDashboard = ({ setTab, onOpenCsvImport }: Props) => {
         );
 
         setKpis({
-          newLeads: insts.filter((i) => i.crm_class === 'Lead' && i.crm_stage === defaultStageName).length,
-          inProgress: insts.filter((i) => i.crm_stage && !wonStageNames.has(i.crm_stage) && !lostStageNames.has(i.crm_stage)).length,
-          activeCustomers: insts.filter((i) => i.crm_class === 'Customer').length,
+          newLeads: leadCountRes.count ?? 0,
+          inProgress: insts.filter((i) => i.crm_class === CRM_LEAD_CLASS && i.crm_stage && !wonStageNames.has(i.crm_stage) && !lostStageNames.has(i.crm_stage)).length,
+          activeCustomers: customerCountRes.count ?? 0,
           openPotential: Math.round(totalPotential / 1000),
           openOpportunities: opps.length,
           overdueFollowups: overdue,
@@ -226,7 +232,8 @@ const CRMDashboard = ({ setTab, onOpenCsvImport }: Props) => {
           id, name, crm_stage, crm_potential, crm_last_contact_at, crm_owner_id,
           instructor:crm_assigned_instructor_id (full_name)
         `)
-        .eq('crm_class', 'Lead')
+        .or(CRM_SOFT_DELETE_FILTER)
+        .eq('crm_class', CRM_LEAD_CLASS)
         .not('crm_stage', 'is', null)
         .order('crm_last_contact_at', { ascending: false })
         .limit(4);
@@ -390,7 +397,7 @@ const CRMDashboard = ({ setTab, onOpenCsvImport }: Props) => {
                   </div>
                 </div>
                 <div style={{ textAlign: 'left' }}>
-                  {h.crm_stage && stageBadge(h.crm_stage)}
+                  {h.crm_stage && stageBadge(h.crm_stage, stageColors[h.crm_stage])}
                   {h.crm_potential != null && (
                     <div style={{ fontSize: 13, fontWeight: 800, color: C.success, marginTop: 4, textAlign: 'right' }}>
                       ₪{Number(h.crm_potential).toLocaleString('he-IL')}

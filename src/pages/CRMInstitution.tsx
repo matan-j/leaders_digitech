@@ -783,25 +783,54 @@ const TabActivity = ({ activities, contacts, opportunities, onLog, onEdit, onDel
 
 // ── tab: תקשורת ───────────────────────────────────────────────
 type CommunicationFilter = 'all' | 'whatsapp' | 'email';
-type CommunicationTimelineItem =
-  | { kind: 'communication'; id: string; occurred_at: string; communication: Communication }
-  | { kind: 'legacy'; id: string; occurred_at: string; activity: Activity };
+type CommunicationTimelineItem = { id: string; occurred_at: string; communication: Communication };
+type PartyInfo = { name: string | null; address: string | null; fallback: string };
 
-const partyLabel = (name: string | null, address: string | null, fallback: string | null) => {
-  if (name && address) return `${name} · ${address}`;
-  return name || address || fallback || 'לא ידוע';
+const partyInfo = (name: string | null, address: string | null, fallback: string | null): PartyInfo => ({
+  name,
+  address,
+  fallback: fallback || 'לא ידוע',
+});
+
+const LtrValue = ({ children }: { children: React.ReactNode }) => (
+  <span dir="ltr" style={{ direction: 'ltr', unicodeBidi: 'plaintext', textAlign: 'left', display: 'inline-block', maxWidth: '100%', overflowWrap: 'anywhere' }}>
+    {children}
+  </span>
+);
+
+const PartyDisplay = ({ party, align = 'right' }: { party: PartyInfo; align?: 'right' | 'left' }) => {
+  const hasName = Boolean(party.name);
+  const hasAddress = Boolean(party.address);
+  const justify = align === 'right' ? 'flex-end' : 'flex-start';
+  return (
+    <span dir="rtl" style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: justify, gap: 4, maxWidth: '100%', textAlign: align }}>
+      {hasName && <span dir="auto" style={{ overflowWrap: 'anywhere' }}>{party.name}</span>}
+      {hasName && hasAddress && <span style={{ color: C.textDim }}>·</span>}
+      {hasAddress ? <LtrValue>{party.address}</LtrValue> : !hasName ? <span dir="auto">{party.fallback}</span> : null}
+    </span>
+  );
 };
 
-const communicationMeta = (c: Communication) =>
-  [c.provider, c.provider_status || c.status, c.provider_message_id ? `ID ${c.provider_message_id}` : null].filter(Boolean).join(' · ');
+const communicationMetaParts = (c: Communication) => [
+  c.provider,
+  c.provider_status || c.status,
+  c.provider_message_id ? `ID ${c.provider_message_id}` : null,
+].filter((part): part is string => Boolean(part));
 
 const ProviderMeta = ({ communication }: { communication: Communication }) => {
-  const meta = communicationMeta(communication);
-  if (!meta) return null;
+  const metaParts = communicationMetaParts(communication);
+  if (metaParts.length === 0) return null;
   return (
-    <details style={{ marginTop: 6, fontSize: 10, color: C.textDim }}>
+    <details dir="rtl" style={{ marginTop: 6, fontSize: 10, color: C.textDim, textAlign: 'right' }}>
       <summary style={{ cursor: 'pointer', display: 'inline-block' }}>פרטי ספק</summary>
-      <div style={{ marginTop: 4 }}>{meta}</div>
+      <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 4 }}>
+        {metaParts.map((part, index) => (
+          <span key={`${part}-${index}`} style={{ display: 'inline-flex', gap: 4 }}>
+            {index > 0 && <span dir="rtl">·</span>}
+            <LtrValue>{part}</LtrValue>
+          </span>
+        ))}
+      </div>
     </details>
   );
 };
@@ -830,15 +859,16 @@ const CommunicationFilterBar = ({ filter, setFilter }: { filter: CommunicationFi
   </div>
 );
 
-const WhatsAppBubble = ({ communication, fromLabel, toLabel }: { communication: Communication; fromLabel: string; toLabel: string }) => {
+const WhatsAppBubble = ({ communication, fromParty, toParty }: { communication: Communication; fromParty: PartyInfo; toParty: PartyInfo }) => {
   const inbound = communication.direction === 'inbound';
+  const labelAlign = inbound ? 'right' : 'left';
   return (
     <div style={{ display: 'flex', justifyContent: inbound ? 'flex-start' : 'flex-end', width: '100%', padding: '2px 0' }}>
       <div style={{ maxWidth: '70%', minWidth: 120, display: 'flex', flexDirection: 'column', alignItems: inbound ? 'flex-start' : 'flex-end' }}>
         <div style={{ marginBottom: 3, padding: '0 6px', fontSize: 10, color: C.textDim, textAlign: inbound ? 'right' : 'left', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {inbound ? fromLabel : toLabel}
+          <PartyDisplay party={inbound ? fromParty : toParty} align={labelAlign} />
         </div>
-        <div style={{ position: 'relative', background: inbound ? '#FFFFFF' : '#D9FDD3', border: `1px solid ${inbound ? C.borderLight : '#B7E8AE'}`, borderRadius: inbound ? '16px 16px 16px 5px' : '16px 16px 5px 16px', padding: '9px 12px 7px', boxShadow: '0 2px 7px rgba(15,23,42,0.08)', width: 'fit-content', maxWidth: '100%' }}>
+        <div dir="rtl" style={{ position: 'relative', background: inbound ? '#FFFFFF' : '#D9FDD3', border: `1px solid ${inbound ? C.borderLight : '#B7E8AE'}`, borderRadius: inbound ? '16px 16px 16px 5px' : '16px 16px 5px 16px', padding: '9px 12px 7px', boxShadow: '0 2px 7px rgba(15,23,42,0.08)', width: 'fit-content', maxWidth: '100%', textAlign: 'right' }}>
           <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55, fontSize: 13, color: C.text, overflowWrap: 'anywhere' }}>{communication.body_text}</div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6, marginTop: 5 }}>
             <span style={{ fontSize: 10, color: C.textDim }}>{formatTime(communication.occurred_at)}</span>
@@ -851,20 +881,20 @@ const WhatsAppBubble = ({ communication, fromLabel, toLabel }: { communication: 
   );
 };
 
-const EmailCommunicationCard = ({ communication, fromLabel, toLabel }: { communication: Communication; fromLabel: string; toLabel: string }) => {
+const EmailCommunicationCard = ({ communication, fromParty, toParty }: { communication: Communication; fromParty: PartyInfo; toParty: PartyInfo }) => {
   const inbound = communication.direction === 'inbound';
   const isLong = communication.body_text.length > 420;
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderInlineStart: `4px solid ${inbound ? C.teal : C.accent}`, borderRadius: 9, padding: '12px 15px', boxShadow: '0 1px 2px rgba(15,23,42,0.04)' }}>
+    <div dir="rtl" style={{ background: C.surface, border: `1px solid ${C.border}`, borderInlineStart: `4px solid ${inbound ? C.teal : C.accent}`, borderRadius: 9, padding: '12px 15px', boxShadow: '0 1px 2px rgba(15,23,42,0.04)', textAlign: 'right' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         <Badge label="📧 Email" color={C.accent} bg={C.accentBg} />
         <Badge label={inbound ? 'נכנס' : 'יוצא'} color={inbound ? C.teal : C.accent} bg={inbound ? C.tealBg : C.accentBg} />
-        <span style={{ marginRight: 'auto', fontSize: 11, color: C.textDim }}>{formatTime(communication.occurred_at)}</span>
+        <span style={{ marginInlineStart: 'auto', fontSize: 11, color: C.textDim }}>{formatTime(communication.occurred_at)}</span>
       </div>
       <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginBottom: 7 }}>{communication.subject || '(ללא נושא)'}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '3px 8px', fontSize: 11, color: C.textSub, marginBottom: 10 }}>
-        <span style={{ fontWeight: 700 }}>מאת</span><span>{fromLabel}</span>
-        <span style={{ fontWeight: 700 }}>אל</span><span>{toLabel}</span>
+      <div dir="rtl" style={{ display: 'grid', gridTemplateColumns: 'max-content minmax(0,1fr)', gap: '3px 8px', fontSize: 11, color: C.textSub, marginBottom: 10, textAlign: 'right' }}>
+        <span style={{ fontWeight: 700 }}>מאת</span><span style={{ minWidth: 0 }}><PartyDisplay party={fromParty} align="left" /></span>
+        <span style={{ fontWeight: 700 }}>אל</span><span style={{ minWidth: 0 }}><PartyDisplay party={toParty} align="left" /></span>
       </div>
       {isLong ? (
         <details>
@@ -907,18 +937,17 @@ const TabCommunication = ({ communications, activities, contacts, onWhatsApp, on
     .filter(a => !linkedActivityIds.has(a.id))
     .filter(a => filter === 'all' || (filter === 'email' ? a.type === 'מייל' : a.type === 'וואטסאפ'));
   const timelineItems: CommunicationTimelineItem[] = [
-    ...filteredComms.map(c => ({ kind: 'communication' as const, id: c.id, occurred_at: c.occurred_at, communication: c })),
-    ...legacyMsgs.map(a => ({ kind: 'legacy' as const, id: a.id, occurred_at: a.occurred_at || a.created_at, activity: a })),
+    ...filteredComms.map(c => ({ id: c.id, occurred_at: c.occurred_at, communication: c })),
   ].sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
   const total = timelineItems.length;
   let lastDate = '';
 
-  const fromLabel = (c: Communication) => partyLabel(
+  const fromParty = (c: Communication) => partyInfo(
     c.sender_name,
     c.sender_address,
     c.direction === 'inbound' && c.contact_id ? contactMap[c.contact_id] : 'Leaders CRM',
   );
-  const toLabel = (c: Communication) => partyLabel(
+  const toParty = (c: Communication) => partyInfo(
     c.recipient_name,
     c.recipient_address,
     c.direction === 'outbound' && c.contact_id ? contactMap[c.contact_id] : 'Leaders CRM',
@@ -941,14 +970,12 @@ const TabCommunication = ({ communications, activities, contacts, onWhatsApp, on
             const showDate = currentDate !== lastDate;
             lastDate = currentDate;
             return (
-              <div key={`${item.kind}-${item.id}`}>
+              <div key={item.id}>
                 {showDate && <DateSeparator label={formatCommunicationDateLabel(item.occurred_at)} />}
-                {item.kind === 'legacy' ? (
-                  <LegacyCommunicationCard activity={item.activity} contacts={contacts} />
-                ) : item.communication.channel === 'whatsapp' ? (
-                  <WhatsAppBubble communication={item.communication} fromLabel={fromLabel(item.communication)} toLabel={toLabel(item.communication)} />
+                {item.communication.channel === 'whatsapp' ? (
+                  <WhatsAppBubble communication={item.communication} fromParty={fromParty(item.communication)} toParty={toParty(item.communication)} />
                 ) : (
-                  <EmailCommunicationCard communication={item.communication} fromLabel={fromLabel(item.communication)} toLabel={toLabel(item.communication)} />
+                  <EmailCommunicationCard communication={item.communication} fromParty={fromParty(item.communication)} toParty={toParty(item.communication)} />
                 )}
               </div>
             );
@@ -959,6 +986,18 @@ const TabCommunication = ({ communications, activities, contacts, onWhatsApp, on
           <div style={{ fontSize: 28, marginBottom: 10 }}>💬</div>
           אין תקשורת להצגה עדיין — שלח מייל או וואטסאפ
         </div>
+      )}
+      {legacyMsgs.length > 0 && (
+        <details style={{ marginTop: 14, border: `1px solid ${C.border}`, borderRadius: 9, background: C.surface, overflow: 'hidden' }}>
+          <summary style={{ cursor: 'pointer', padding: '10px 14px', fontSize: 12, fontWeight: 700, color: C.textSub, background: C.bg }}>
+            רשומות פעילות ישנות ({legacyMsgs.length})
+          </summary>
+          <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {legacyMsgs.map(activity => (
+              <LegacyCommunicationCard key={activity.id} activity={activity} contacts={contacts} />
+            ))}
+          </div>
+        </details>
       )}
     </div>
   );

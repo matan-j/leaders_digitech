@@ -909,6 +909,21 @@ export default function CRMBroadcast() {
       ? filteredCount
       : (selList?.count ?? null);
   const confirmationRecipientCount = loadingPreview ? null : recipientStats.available;
+  const channelLabel = channel === 'whatsapp' ? 'וואטסאפ' : 'מייל';
+  const channelDestinationLabel = channel === 'whatsapp' ? 'טלפון' : 'כתובת מייל';
+  const channelRequirementText = channel === 'whatsapp'
+    ? 'נמענים ללא מספר טלפון לא ייכללו בשליחה.'
+    : 'נמענים ללא כתובת מייל לא ייכללו בשליחה.';
+  const selectedAudienceKindLabel = selList?.id === 'renewal'
+    ? 'לקוחות'
+    : selList?.id === 'manual'
+      ? 'מוסדות ברשימה'
+      : 'לידים';
+  const emptyPreviewText = recipientStats.total === 0
+    ? `לא נמצאו ${selectedAudienceKindLabel} שמתאימים לסינונים שנבחרו.`
+    : `אין נמענים זמינים לשליחת ${channelLabel}. ${channelRequirementText}`;
+  const noSendableRecipients = !loadingPreview && recipientStats.available === 0;
+  const sendDisabled = sending || loadingPreview || noSendableRecipients;
   const selectedListLabel = selList?.id === 'manual'
     ? manualLists.find(l => l.id === manualListId)?.name ?? '—'
     : selList?.name ?? '—';
@@ -1314,7 +1329,7 @@ export default function CRMBroadcast() {
               {/* Banner */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: C.aiBg, border: `1px solid ${C.ai}20`, borderRadius: 8, marginBottom: 14, fontSize: 13 }}>
                 <span style={{ color: C.ai, flex: 1 }}>
-                  עומד לשלוח <b>{channel === 'whatsapp' ? 'וואטסאפ' : 'מייל'}</b> ל-<b>{confirmationRecipientCount ?? '?'} נמענים</b>
+                  עומד לשלוח <b>{channelLabel}</b> ל-<b>{confirmationRecipientCount ?? '?'} נמענים זמינים</b>
                 </span>
               </div>
 
@@ -1333,9 +1348,30 @@ export default function CRMBroadcast() {
                 ))}
                 <div style={{ display: 'flex', gap: 10, padding: '7px 0', borderTop: `1px solid ${C.borderLight}` }}>
                   <span style={{ width: 70, fontSize: 12, color: C.textSub, fontWeight: 500 }}>נמענים</span>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: recipientStats.unavailable > 0 ? C.warning : C.success }}>
-                    {loadingPreview ? 'טוען...' : `${recipientStats.available} ניתנים לשליחה / ${recipientStats.unavailable} ללא פרטי קשר`}
-                  </span>
+                  <div style={{ flex: 1 }}>
+                    {loadingPreview ? (
+                      <span style={{ fontSize: 12, fontWeight: 600, color: C.textSub }}>מחשב נמענים זמינים...</span>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          <span style={{ padding: '3px 8px', borderRadius: 20, background: C.grayBg, color: C.gray, fontSize: 11, fontWeight: 700 }}>
+                            {recipientStats.total} התאמות
+                          </span>
+                          <span style={{ padding: '3px 8px', borderRadius: 20, background: C.successBg, color: C.success, fontSize: 11, fontWeight: 700 }}>
+                            {recipientStats.available} זמינים לשליחה
+                          </span>
+                          {recipientStats.unavailable > 0 && (
+                            <span style={{ padding: '3px 8px', borderRadius: 20, background: C.warningBg, color: C.warning, fontSize: 11, fontWeight: 700 }}>
+                              {recipientStats.unavailable} ללא {channelDestinationLabel}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ marginTop: 5, fontSize: 11, color: recipientStats.available === 0 ? C.warning : C.textSub }}>
+                          {recipientStats.available === 0 ? `אין נמענים זמינים. ${channelRequirementText}` : channelRequirementText}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1359,9 +1395,16 @@ export default function CRMBroadcast() {
                 {previewExpanded && (
                   <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
                     {loadingPreview ? (
-                      <div style={{ padding: '20px', textAlign: 'center', fontSize: 12, color: C.textDim }}>⟳ טוען נמענים...</div>
+                      <div style={{ padding: '20px', textAlign: 'center', fontSize: 12, color: C.textDim }}>
+                        ⟳ מחשב התאמה לערוץ ובונה תצוגה מקדימה...
+                      </div>
                     ) : recipientPreview.length === 0 ? (
-                      <div style={{ padding: '20px', textAlign: 'center', fontSize: 12, color: C.textDim }}>לא נמצאו נמענים</div>
+                      <div style={{ padding: '20px', textAlign: 'center' }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{emptyPreviewText}</div>
+                        <div style={{ marginTop: 5, fontSize: 11, color: C.textSub }}>
+                          שינוי סינון הקהל או הערוץ יעדכן את הספירה והתצוגה.
+                        </div>
+                      </div>
                     ) : (
                       <>
                         <div style={{ maxHeight: 300, overflowY: 'auto' }}>
@@ -1383,7 +1426,12 @@ export default function CRMBroadcast() {
                                 >
                                   <td style={{ padding: '6px 12px', fontWeight: 500 }}>{row.institution_name}</td>
                                   <td style={{ padding: '6px 12px', color: row.contact_name ? C.text : C.textDim }}>{row.contact_name ?? 'אין איש קשר'}</td>
-                                  <td style={{ padding: '6px 12px', color: C.textSub }}>{(channel === 'whatsapp' ? row.phone : row.email) ?? '—'}</td>
+                                  <td style={{ padding: '6px 12px', color: C.textSub }}>
+                                    <span>{(channel === 'whatsapp' ? row.phone : row.email) ?? '—'}</span>
+                                    <span style={{ marginInlineStart: 6, padding: '2px 6px', borderRadius: 20, background: C.successBg, color: C.success, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                      יש {channelDestinationLabel}
+                                    </span>
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -1401,12 +1449,17 @@ export default function CRMBroadcast() {
                 </button>
                 <button
                   onClick={doSend}
-                  disabled={sending || (!loadingPreview && recipientStats.available === 0)}
-                  style={{ flex: 1, padding: '7px 0', borderRadius: 6, border: 'none', background: (!loadingPreview && recipientStats.available === 0) ? C.border : C.accent, color: '#fff', fontSize: 13, fontWeight: 600, cursor: sending || (!loadingPreview && recipientStats.available === 0) ? 'not-allowed' : 'pointer', opacity: sending ? 0.7 : 1 }}
+                  disabled={sendDisabled}
+                  style={{ flex: 1, padding: '7px 0', borderRadius: 6, border: 'none', background: sendDisabled ? C.border : C.accent, color: '#fff', fontSize: 13, fontWeight: 600, cursor: sendDisabled ? 'not-allowed' : 'pointer', opacity: sending ? 0.7 : 1 }}
                 >
-                  {sending ? '⟳ שולח...' : '📤 שלח עכשיו'}
+                  {sending ? '⟳ שולח...' : loadingPreview ? 'מחשב נמענים...' : noSendableRecipients ? 'אין נמענים זמינים' : '📤 שלח עכשיו'}
                 </button>
               </div>
+              {noSendableRecipients && (
+                <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: C.warningBg, color: C.warning, fontSize: 12, fontWeight: 600 }}>
+                  אי אפשר לשלוח כרגע: הסינון הנוכחי לא מחזיר נמענים עם {channelDestinationLabel}.
+                </div>
+              )}
             </>
           ) : (
             <div style={{ textAlign: 'center', padding: '32px 0' }}>

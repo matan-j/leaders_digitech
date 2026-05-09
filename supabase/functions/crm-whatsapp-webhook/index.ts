@@ -6,8 +6,26 @@ const GREEN_API_WEBHOOK_SECRET = Deno.env.get('GREEN_API_WEBHOOK_SECRET')
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-green-api-secret',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
+function getWebhookSecret(req: Request): string | null {
+  const customHeader = req.headers.get('x-green-api-secret')
+  if (customHeader) return customHeader
+
+  const querySecret = new URL(req.url).searchParams.get('secret')
+  if (querySecret) return querySecret
+
+  const authorization = req.headers.get('authorization')
+  if (!authorization) return null
+
+  const [scheme, ...tokenParts] = authorization.trim().split(/\s+/)
+  const token = tokenParts.join(' ')
+  if (scheme?.toLowerCase() === 'bearer' && token) return token
+  if (scheme?.toLowerCase() === 'basic' && token) return token
+
+  return authorization
 }
 
 function normalizePhone(raw: string): string {
@@ -186,6 +204,18 @@ async function logInboundCommunication(params: {
   }
 }
 
+async function logInboundActivity(params: {
+  institution_id: string
+  contact_id: string | null
+}): Promise<string | null> {
+  console.log(
+    '[crm-whatsapp-webhook] Skipping legacy activity insert for system inbound message',
+    `institution=${params.institution_id}`,
+    `contact=${params.contact_id ?? 'none'}`,
+  )
+  return null
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -201,7 +231,7 @@ Deno.serve(async (req) => {
 
   try {
     if (GREEN_API_WEBHOOK_SECRET) {
-      const incomingSecret = req.headers.get('x-green-api-secret')
+      const incomingSecret = getWebhookSecret(req)
       if (incomingSecret !== GREEN_API_WEBHOOK_SECRET) {
         console.warn('[crm-whatsapp-webhook] Invalid secret, returning 403')
         return new Response(JSON.stringify({ error: 'Forbidden' }), {
@@ -268,28 +298,16 @@ Deno.serve(async (req) => {
       return ok200()
     }
 
-    const summary = textMessage.slice(0, 1000)
-    const { data: activity, error: insertErr } = await supabase.from('crm_activities').insert({
+    const activityId = await logInboundActivity({
       institution_id: match.institution_id,
       contact_id: match.contact_id,
-      user_id: null,
-      type: 'וואטסאפ',
-      direction: 'inbound',
-      summary,
-      status: 'Completed',
-      occurred_at: occurredAt,
-    }).select('id').single()
-
-    if (insertErr) {
-      console.error('[crm-whatsapp-webhook] Insert error:', insertErr.message)
-      return ok200()
-    }
+    })
 
     await logInboundCommunication({
       supabase,
       institution_id: match.institution_id,
       contact_id: match.contact_id,
-      activity_id: activity?.id ?? null,
+      activity_id: activityId,
       textMessage,
       rawPhone,
       occurredAt,

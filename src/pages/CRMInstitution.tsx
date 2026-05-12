@@ -495,6 +495,7 @@ const EditInstitutionModal = ({ institution, pipelineStageNames, onClose, onSave
     crm_class: institution.crm_class ?? '',
     crm_stage: institution.crm_stage ?? '',
     crm_risk: institution.crm_risk ?? '',
+    crm_lead_source: institution.crm_lead_source ?? '',
     crm_network: institution.crm_network ?? '',
     crm_budget: institution.crm_budget ?? '',
     crm_potential: institution.crm_potential?.toString() ?? '',
@@ -516,6 +517,7 @@ const EditInstitutionModal = ({ institution, pipelineStageNames, onClose, onSave
       crm_class: form.crm_class || null,
       crm_stage: form.crm_stage || null,
       crm_risk: form.crm_risk || null,
+      crm_lead_source: form.crm_lead_source || null,
       crm_network: form.crm_network || null,
       crm_budget: form.crm_budget || null,
       crm_potential: form.crm_potential ? parseFloat(form.crm_potential) : null,
@@ -557,6 +559,7 @@ const EditInstitutionModal = ({ institution, pipelineStageNames, onClose, onSave
             {['low', 'medium', 'high'].map(r => <option key={r}>{r}</option>)}
           </select>
         </Field>
+        <Field label="מקור ליד"><input style={inputStyle} value={form.crm_lead_source} onChange={e => set('crm_lead_source', e.target.value)} /></Field>
         <Field label="פוטנציאל (₪)"><input style={inputStyle} type="number" value={form.crm_potential} onChange={e => set('crm_potential', e.target.value)} /></Field>
         <Field label="רשת חינוכית"><input style={inputStyle} value={form.crm_network} onChange={e => set('crm_network', e.target.value)} /></Field>
         <Field label="תקציב"><input style={inputStyle} value={form.crm_budget} onChange={e => set('crm_budget', e.target.value)} /></Field>
@@ -570,40 +573,144 @@ const EditInstitutionModal = ({ institution, pipelineStageNames, onClose, onSave
 };
 
 // ── tab: סקירה ────────────────────────────────────────────────
-const TabOverview = ({ institution, activities, contacts, onNotesSaved }: { institution: Institution; activities: Activity[]; contacts: Contact[]; onNotesSaved: (notes: string) => void }) => {
+const TabOverview = ({ institution, activities, contacts, onOverviewSaved }: { institution: Institution; activities: Activity[]; contacts: Contact[]; onOverviewSaved: (patch: Partial<Institution>) => void }) => {
   const contactMap = Object.fromEntries(contacts.map(c => [c.id, c.name]));
   const typeIcon: Record<string, string> = { שיחה: '📞', מייל: '📧', פגישה: '🤝', וואטסאפ: '📱', אחר: '📝' };
+  const [form, setForm] = useState({
+    crm_interests: institution.crm_interests ?? [],
+    crm_pain_points: institution.crm_pain_points ?? '',
+    crm_budget: institution.crm_budget ?? '',
+    crm_network: institution.crm_network ?? '',
+    crm_lead_source: institution.crm_lead_source ?? '',
+  });
+  const [interestDraft, setInterestDraft] = useState('');
   const [notes, setNotes] = useState(institution.crm_notes ?? '');
-  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [commercialSaving, setCommercialSaving] = useState(false);
+  const [notesSaving, setNotesSaving] = useState(false);
+
+  useEffect(() => {
+    setForm({
+      crm_interests: institution.crm_interests ?? [],
+      crm_pain_points: institution.crm_pain_points ?? '',
+      crm_budget: institution.crm_budget ?? '',
+      crm_network: institution.crm_network ?? '',
+      crm_lead_source: institution.crm_lead_source ?? '',
+    });
+    setInterestDraft('');
+    setNotes(institution.crm_notes ?? '');
+    setDirty(false);
+  }, [institution.id, institution.crm_interests, institution.crm_pain_points, institution.crm_budget, institution.crm_network, institution.crm_lead_source, institution.crm_notes]);
+
+  const set = (k: keyof typeof form, v: string | string[]) => {
+    setForm(p => ({ ...p, [k]: v }));
+    setDirty(true);
+  };
+
+  const addInterests = (raw: string) => {
+    const next = raw.split(',').map(s => s.trim()).filter(Boolean);
+    if (!next.length) return;
+    set('crm_interests', [...form.crm_interests, ...next.filter(s => !form.crm_interests.includes(s))]);
+    setInterestDraft('');
+  };
+
+  const removeInterest = (interest: string) => {
+    set('crm_interests', form.crm_interests.filter(s => s !== interest));
+  };
+
+  const saveCommercialInfo = async () => {
+    setCommercialSaving(true);
+    const crmInterests = [
+      ...form.crm_interests,
+      ...interestDraft.split(',').map(s => s.trim()).filter(Boolean).filter(s => !form.crm_interests.includes(s)),
+    ];
+    const patch = {
+      crm_interests: crmInterests.length ? crmInterests : null,
+      crm_pain_points: form.crm_pain_points.trim() || null,
+      crm_budget: form.crm_budget.trim() || null,
+      crm_network: form.crm_network.trim() || null,
+      crm_lead_source: form.crm_lead_source.trim() || null,
+    };
+    const { error } = await supabase.from('educational_institutions').update(patch).eq('id', institution.id);
+    setCommercialSaving(false);
+    if (!error) {
+      onOverviewSaved(patch);
+      setInterestDraft('');
+      setDirty(false);
+    }
+  };
 
   const handleNotesBlur = async () => {
     if (notes === (institution.crm_notes ?? '')) return;
-    setSaving(true);
-    await supabase.from('educational_institutions').update({ crm_notes: notes || null }).eq('id', institution.id);
-    setSaving(false);
-    onNotesSaved(notes);
+    setNotesSaving(true);
+    const { error } = await supabase.from('educational_institutions').update({ crm_notes: notes || null }).eq('id', institution.id);
+    setNotesSaving(false);
+    if (!error) onOverviewSaved({ crm_notes: notes || null });
   };
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
       <div>
-        <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>מידע מסחרי</div>
-        {[
-          ['תחומי עניין', (institution.crm_interests ?? []).join(', ') || '—'],
-          ['נקודות כאב', institution.crm_pain_points ?? '—'],
-          ['תקציב', institution.crm_budget ?? '—'],
-          ['רשת חינוכית', institution.crm_network ?? '—'],
-          ['מקור ליד', institution.crm_lead_source ?? '—'],
-        ].map(([k, v]) => (
-          <div key={k} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: `1px solid ${C.borderLight}` }}>
-            <span style={{ width: 120, fontSize: 12, color: C.textSub, fontWeight: 500, flexShrink: 0 }}>{k}</span>
-            <span style={{ fontSize: 12, color: C.text }}>{v}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: 'uppercase', letterSpacing: '0.5px', flex: 1 }}>מידע מסחרי</div>
+          {dirty && <Btn sm onClick={saveCommercialInfo} disabled={commercialSaving}>{commercialSaving ? 'שומר...' : 'שמור'}</Btn>}
+        </div>
+        <div style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: `1px solid ${C.borderLight}` }}>
+          <span style={{ width: 120, fontSize: 12, color: C.textSub, fontWeight: 500, flexShrink: 0 }}>תחומי עניין</span>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {form.crm_interests.length === 0 && <span style={{ fontSize: 12, color: C.textDim }}>—</span>}
+              {form.crm_interests.map(interest => (
+                <span key={interest} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: C.accentBg, color: C.accent }}>
+                  {interest}
+                  <button type="button" onClick={() => removeInterest(interest)} style={{ border: 'none', background: 'transparent', color: C.accent, cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
+                </span>
+              ))}
+            </div>
+            <input
+              style={{ ...inputStyle, fontSize: 12, padding: '6px 9px' }}
+              value={interestDraft}
+              onChange={e => setInterestDraft(e.target.value)}
+              onBlur={() => addInterests(interestDraft)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ',') {
+                  e.preventDefault();
+                  addInterests(interestDraft);
+                }
+              }}
+              placeholder="הוסף תחום עניין..."
+            />
+          </div>
+        </div>
+        {([
+          ['נקודות כאב', 'crm_pain_points', 'textarea'],
+          ['תקציב', 'crm_budget', 'input'],
+          ['רשת חינוכית', 'crm_network', 'input'],
+          ['מקור ליד', 'crm_lead_source', 'input'],
+        ] as [string, keyof typeof form, 'input' | 'textarea'][]).map(([label, key, kind]) => (
+          <div key={key} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: `1px solid ${C.borderLight}` }}>
+            <span style={{ width: 120, fontSize: 12, color: C.textSub, fontWeight: 500, flexShrink: 0 }}>{label}</span>
+            {kind === 'textarea' ? (
+              <textarea
+                style={{ ...inputStyle, fontSize: 12, minHeight: 54, resize: 'vertical' }}
+                value={form[key] as string}
+                onChange={e => set(key, e.target.value)}
+                placeholder="—"
+              />
+            ) : (
+              <input
+                style={{ ...inputStyle, fontSize: 12, padding: '6px 9px' }}
+                value={form[key] as string}
+                onChange={e => set(key, e.target.value)}
+                placeholder="—"
+              />
+            )}
           </div>
         ))}
         <div style={{ marginTop: 12 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: C.textSub, marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6 }}>
             הערות
-            {saving && <span style={{ fontSize: 9, color: C.textDim, fontWeight: 400 }}>שומר...</span>}
+            {notesSaving && <span style={{ fontSize: 9, color: C.textDim, fontWeight: 400 }}>שומר...</span>}
           </div>
           <textarea
             value={notes}
@@ -1200,6 +1307,20 @@ async function callGHL(action: string, payload: Record<string, unknown>) {
   return data;
 }
 
+const getGhlCommunicationId = (result: unknown) => {
+  if (!result || typeof result !== 'object') return null;
+  const data = 'data' in result ? (result as { data?: unknown }).data : result;
+  if (!data || typeof data !== 'object') return null;
+  const communicationId = (data as { communication_id?: unknown }).communication_id;
+  return typeof communicationId === 'string' ? communicationId : null;
+};
+
+async function fetchCommunicationById(id: string) {
+  const { data, error } = await supabase.from('crm_communications').select('*').eq('id', id).single();
+  if (error) throw error;
+  return data as Communication;
+}
+
 function replaceVars(text: string, vars: Record<string, string>) {
   return text.replace(/\{\{([^}]+)\}\}/g, (_, k) => vars[String(k).trim()] ?? `{{${k}}}`);
 }
@@ -1221,7 +1342,7 @@ function replaceVariables(text: string, contact: Contact, institutionName: strin
 
 // SendWhatsApp Modal
 interface MessageTemplate { id: string; name: string; channel: string; body: string; subject: string | null; variables: string[] | null }
-interface SendWhatsAppModalProps { contacts: Contact[]; institutionName: string; institutionId: string; onClose: () => void; onSent: (a: Activity) => void; }
+interface SendWhatsAppModalProps { contacts: Contact[]; institutionName: string; institutionId: string; onClose: () => void; onSent: (communication: Communication) => void; }
 const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, onSent }: SendWhatsAppModalProps) => {
   const [contactId, setContactId] = useState(contacts[0]?.id ?? '');
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
@@ -1263,7 +1384,7 @@ const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, 
     try {
       const finalMessage = preview;
       const { data: { user } } = await supabase.auth.getUser();
-      await callGHL('send_whatsapp', {
+      const result = await callGHL('send_whatsapp', {
         phone: selectedContact.phone,
         message: finalMessage,
         contactName: selectedContact.name,
@@ -1271,14 +1392,10 @@ const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, 
         contact_id: contactId || null,
         user_id: user?.id ?? null,
         template_id: templateId || null,
-        skip_activity_log: true,
+        require_communication_log: true,
       });
-      const { data: act } = await supabase.from('crm_activities').insert([{
-        institution_id: institutionId, type: 'וואטסאפ', user_id: user!.id,
-        contact_id: contactId || null, summary: preview.slice(0, 200), status: 'Completed',
-        occurred_at: new Date().toISOString(),
-      }]).select().single();
-      if (act) onSent(act as Activity);
+      const communicationId = getGhlCommunicationId(result);
+      if (communicationId) onSent(await fetchCommunicationById(communicationId));
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'שגיאה');
@@ -1318,7 +1435,7 @@ const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, 
 };
 
 // SendEmail Modal
-interface SendEmailModalProps { contacts: Contact[]; institutionName: string; institutionId: string; onClose: () => void; onSent: (a: Activity) => void; }
+interface SendEmailModalProps { contacts: Contact[]; institutionName: string; institutionId: string; onClose: () => void; onSent: (communication: Communication) => void; }
 const SendEmailModal = ({ contacts, institutionName, institutionId, onClose, onSent }: SendEmailModalProps) => {
   const [contactId, setContactId] = useState(contacts[0]?.id ?? '');
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
@@ -1361,7 +1478,7 @@ const SendEmailModal = ({ contacts, institutionName, institutionId, onClose, onS
       const finalBody = replaceVariables(replaceVars(body, vars), selectedContact, institutionName, senderName);
       const finalSubject = replaceVariables(replaceVars(subject || '(ללא נושא)', vars), selectedContact, institutionName, senderName);
       const { data: { user } } = await supabase.auth.getUser();
-      await callGHL('send_email', {
+      const result = await callGHL('send_email', {
         email: selectedContact.email,
         subject: finalSubject,
         body: finalBody,
@@ -1370,14 +1487,10 @@ const SendEmailModal = ({ contacts, institutionName, institutionId, onClose, onS
         contact_id: contactId || null,
         user_id: user?.id ?? null,
         template_id: templateId || null,
-        skip_activity_log: true,
+        require_communication_log: true,
       });
-      const { data: act } = await supabase.from('crm_activities').insert([{
-        institution_id: institutionId, type: 'מייל', user_id: user!.id,
-        contact_id: contactId || null, summary: `${subject ? subject + ': ' : ''}${body.slice(0, 160)}`, status: 'Completed',
-        occurred_at: new Date().toISOString(),
-      }]).select().single();
-      if (act) onSent(act as Activity);
+      const communicationId = getGhlCommunicationId(result);
+      if (communicationId) onSent(await fetchCommunicationById(communicationId));
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'שגיאה');
@@ -1545,8 +1658,8 @@ const CRMInstitution = () => {
         setEditActivity(null);
       }} />}
       {showEdit && <EditInstitutionModal institution={institution} pipelineStageNames={pipelineStageNames} onClose={() => setShowEdit(false)} onSaved={patch => { setInstitution(p => p ? { ...p, ...patch } : p); setShowEdit(false); }} />}
-      {showWhatsApp && id && <SendWhatsAppModal contacts={contacts} institutionName={institution.name} institutionId={id} onClose={() => setShowWhatsApp(false)} onSent={a => { setActivities(p => [a, ...p]); setShowWhatsApp(false); }} />}
-      {showEmail && id && <SendEmailModal contacts={contacts} institutionName={institution.name} institutionId={id} onClose={() => setShowEmail(false)} onSent={a => { setActivities(p => [a, ...p]); setShowEmail(false); }} />}
+      {showWhatsApp && id && <SendWhatsAppModal contacts={contacts} institutionName={institution.name} institutionId={id} onClose={() => setShowWhatsApp(false)} onSent={communication => { setCommunications(p => [communication, ...p]); setShowWhatsApp(false); }} />}
+      {showEmail && id && <SendEmailModal contacts={contacts} institutionName={institution.name} institutionId={id} onClose={() => setShowEmail(false)} onSent={communication => { setCommunications(p => [communication, ...p]); setShowEmail(false); }} />}
 
       {/* Header card */}
       <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: '14px 24px 0', flexShrink: 0 }}>
@@ -1633,7 +1746,12 @@ const CRMInstitution = () => {
 
           <div style={{ padding: '18px 0' }}>
             <TabsContent value="overview">
-              <TabOverview institution={institution} activities={activities} contacts={contacts} onNotesSaved={n => setInstitution(p => p ? { ...p, crm_notes: n || null } : p)} />
+              <TabOverview
+                institution={institution}
+                activities={activities}
+                contacts={contacts}
+                onOverviewSaved={patch => setInstitution(p => p ? { ...p, ...patch } : p)}
+              />
             </TabsContent>
             <TabsContent value="contacts">
               <TabContacts contacts={contacts} onAdd={() => setShowAddContact(true)} onEdit={setEditContact} onDelete={deleteContact} />

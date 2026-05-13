@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { callCrmAI } from '@/hooks/useCrmAI';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import InstitutionQuotesTab from '@/components/quotes/InstitutionQuotesTab';
 
 // ── design tokens ─────────────────────────────────────────────
 const C = {
@@ -67,7 +68,7 @@ interface CrmFile {
   name: string; size: number; created_at: string; path: string;
 }
 
-const INSTITUTION_TABS = ['overview', 'contacts', 'opportunities', 'activity', 'communication', 'files', 'ai'] as const;
+const INSTITUTION_TABS = ['overview', 'contacts', 'opportunities', 'activity', 'communication', 'files', 'ai', 'quotes'] as const;
 type InstitutionTab = typeof INSTITUTION_TABS[number];
 
 const parseInstitutionTab = (tab: string | null): InstitutionTab =>
@@ -1549,6 +1550,16 @@ const CRMInstitution = () => {
   const [showEdit, setShowEdit] = useState(false);
   const [showWhatsApp, setShowWhatsApp] = useState(false);
   const [showEmail, setShowEmail] = useState(false);
+  const [quoteCreateTrigger, setQuoteCreateTrigger] = useState(0);
+
+  const handleCreateQuoteFromTopBar = () => {
+    // 1) switch to the quotes tab via URL param (matches existing pattern)
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'quotes');
+    setSearchParams(next, { replace: true });
+    // 2) bump trigger — InstitutionQuotesTab listens to this and fires its create flow
+    setQuoteCreateTrigger((n) => n + 1);
+  };
 
   useEffect(() => {
     supabase
@@ -1701,6 +1712,7 @@ const CRMInstitution = () => {
             {contacts.length > 0 && <Btn variant="ghost" sm onClick={() => setShowEmail(true)}>📧 מייל</Btn>}
             <Btn variant="secondary" sm onClick={() => setShowLogActivity(true)}>📝 תעד שיחה</Btn>
             <Btn sm onClick={() => setShowAddOpportunity(true)}>+ הזדמנות</Btn>
+            <Btn variant="ai" sm onClick={handleCreateQuoteFromTopBar}>💰 הצעת מחיר</Btn>
             <Btn variant="secondary" sm onClick={() => setShowAddContact(true)}>+ קשר</Btn>
             <Btn variant="ghost" sm onClick={() => setShowEdit(true)}>✏️ עריכה</Btn>
           </div>
@@ -1735,6 +1747,7 @@ const CRMInstitution = () => {
               { value: 'communication',  label: 'תקשורת' },
               { value: 'files',          label: 'קבצים' },
               { value: 'ai',             label: 'AI' },
+              { value: 'quotes',         label: 'הצעות מחיר' },
             ] as { value: string; label: string }[]).map(t => (
               <TabsTrigger key={t.value} value={t.value}
                 className="rounded-none bg-transparent px-4 py-2 text-xs font-normal text-gray-500 border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-blue-600 data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:bg-transparent"
@@ -1770,6 +1783,16 @@ const CRMInstitution = () => {
             </TabsContent>
             <TabsContent value="ai">
               <TabAI institution={institution} opportunities={opportunities} activities={activities} />
+            </TabsContent>
+            <TabsContent value="quotes">
+              {id && (
+                <InstitutionQuotesTab
+                  institutionId={id}
+                  institutionName={institution.name}
+                  contacts={contacts}
+                  createTrigger={quoteCreateTrigger}
+                />
+              )}
             </TabsContent>
           </div>
         </Tabs>

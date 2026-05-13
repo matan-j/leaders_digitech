@@ -53,6 +53,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { toast } from "@/components/ui/use-toast";
 import MobileNavigation from "@/components/layout/MobileNavigation";
 import AddInstitutionModal from "@/components/institutions/AddInstitutionModal";
+import CompanyInfoSettings from "@/components/settings/CompanyInfoSettings";
 
 // Types
 interface BlockedDate {
@@ -1189,7 +1190,7 @@ const getRoleBadge = (role: string) => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className={isAdmin?"grid w-full grid-cols-2 md:grid-cols-6 mb-6":"grid w-full grid-cols-2 md:grid-cols-4 mb-6"}>
+          <TabsList className={isAdmin?"grid w-full grid-cols-2 md:grid-cols-7 mb-6":"grid w-full grid-cols-2 md:grid-cols-4 mb-6"}>
             <TabsTrigger value="defaults" className="flex items-center gap-2">
               <Clock className="h-4 w-4" />
               <span>ברירות מחדל</span>
@@ -1216,6 +1217,12 @@ const getRoleBadge = (role: string) => {
             <TabsTrigger value="crm-settings" className="flex items-center gap-2">
               <Settings className="h-4 w-4" />
               <span>הגדרות CRM</span>
+            </TabsTrigger>
+          )}
+          {isAdmin && (
+            <TabsTrigger value="company-info" className="flex items-center gap-2">
+              <Building2 className="h-4 w-4" />
+              <span>פרטי חברה</span>
             </TabsTrigger>
           )}
           </TabsList>
@@ -1544,6 +1551,12 @@ const getRoleBadge = (role: string) => {
 {isAdmin && (
   <TabsContent value="crm-settings">
     <CRMSettingsTab />
+  </TabsContent>
+)}
+
+{isAdmin && (
+  <TabsContent value="company-info">
+    <CompanyInfoSettings />
   </TabsContent>
 )}
 

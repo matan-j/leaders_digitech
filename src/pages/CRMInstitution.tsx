@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { callCrmAI } from '@/hooks/useCrmAI';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import InstitutionQuotesTab from '@/components/quotes/InstitutionQuotesTab';
+import MessageAttachmentInput, { type MessageAttachment } from '@/components/crm/MessageAttachmentInput';
 
 // ── design tokens ─────────────────────────────────────────────
 const C = {
@@ -59,6 +60,7 @@ interface Communication {
   recipient_name: string | null; recipient_address: string | null;
   provider: string | null; provider_message_id: string | null; provider_status: string | null;
   status: string; sent_at: string | null; received_at: string | null; occurred_at: string; created_at: string;
+  attachments?: MessageAttachment[] | null;
 }
 interface AIResult {
   score: string; closingChance: string; nextStep: string;
@@ -967,9 +969,56 @@ const CommunicationFilterBar = ({ filter, setFilter }: { filter: CommunicationFi
   </div>
 );
 
+const attachmentKindIcon = (kind: MessageAttachment['kind'] | null | undefined) => {
+  switch (kind) {
+    case 'image': return '🖼️';
+    case 'video': return '🎬';
+    case 'audio': return '🎵';
+    default: return '📄';
+  }
+};
+
+const WhatsAppAttachmentsList = ({ attachments }: { attachments: MessageAttachment[] }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+    {attachments.map((att, idx) => {
+      if (att.kind === 'image') {
+        return (
+          <a key={`${att.url}_${idx}`} href={att.url} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
+            <img
+              src={att.url}
+              alt={att.name}
+              style={{ maxWidth: 240, maxHeight: 220, borderRadius: 10, display: 'block', objectFit: 'cover' }}
+            />
+          </a>
+        );
+      }
+      return (
+        <a
+          key={`${att.url}_${idx}`}
+          href={att.url}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 10px', borderRadius: 8,
+            background: 'rgba(255,255,255,0.7)', border: `1px solid ${C.borderLight}`,
+            textDecoration: 'none', color: C.text,
+          }}
+        >
+          <span style={{ fontSize: 18 }}>{attachmentKindIcon(att.kind)}</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {att.name}
+          </span>
+        </a>
+      );
+    })}
+  </div>
+);
+
 const WhatsAppBubble = ({ communication, fromParty, toParty }: { communication: Communication; fromParty: PartyInfo; toParty: PartyInfo }) => {
   const inbound = communication.direction === 'inbound';
   const labelAlign = inbound ? 'right' : 'left';
+  const attachments = Array.isArray(communication.attachments) ? communication.attachments as MessageAttachment[] : [];
   return (
     <div style={{ display: 'flex', justifyContent: inbound ? 'flex-start' : 'flex-end', width: '100%', padding: '2px 0' }}>
       <div style={{ maxWidth: '70%', minWidth: 120, display: 'flex', flexDirection: 'column', alignItems: inbound ? 'flex-start' : 'flex-end' }}>
@@ -977,7 +1026,10 @@ const WhatsAppBubble = ({ communication, fromParty, toParty }: { communication: 
           <PartyDisplay party={inbound ? fromParty : toParty} align={labelAlign} />
         </div>
         <div dir="rtl" style={{ position: 'relative', background: inbound ? '#FFFFFF' : '#D9FDD3', border: `1px solid ${inbound ? C.borderLight : '#B7E8AE'}`, borderRadius: inbound ? '16px 16px 16px 5px' : '16px 16px 5px 16px', padding: '9px 12px 7px', boxShadow: '0 2px 7px rgba(15,23,42,0.08)', width: 'fit-content', maxWidth: '100%', textAlign: 'right' }}>
-          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55, fontSize: 13, color: C.text, overflowWrap: 'anywhere' }}>{communication.body_text}</div>
+          {communication.body_text && (
+            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55, fontSize: 13, color: C.text, overflowWrap: 'anywhere' }}>{communication.body_text}</div>
+          )}
+          {attachments.length > 0 && <WhatsAppAttachmentsList attachments={attachments} />}
           <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6, marginTop: 5 }}>
             <span style={{ fontSize: 10, color: C.textDim }}>{formatTime(communication.occurred_at)}</span>
             <span style={{ fontSize: 10, color: inbound ? C.teal : C.success, fontWeight: 700 }}>{inbound ? 'נכנס' : 'יוצא'}</span>
@@ -1342,19 +1394,20 @@ function replaceVariables(text: string, contact: Contact, institutionName: strin
 }
 
 // SendWhatsApp Modal
-interface MessageTemplate { id: string; name: string; channel: string; body: string; subject: string | null; variables: string[] | null }
+interface MessageTemplate { id: string; name: string; channel: string; body: string; subject: string | null; variables: string[] | null; attachments?: MessageAttachment[] | null }
 interface SendWhatsAppModalProps { contacts: Contact[]; institutionName: string; institutionId: string; onClose: () => void; onSent: (communication: Communication) => void; }
 const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, onSent }: SendWhatsAppModalProps) => {
   const [contactId, setContactId] = useState(contacts[0]?.id ?? '');
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [templateId, setTemplateId] = useState('');
   const [message, setMessage] = useState('');
+  const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [senderName, setSenderName] = useState('');
 
   useEffect(() => {
-    supabase.from('crm_message_templates').select('id, name, channel, body, subject, variables').eq('channel', 'whatsapp').then(({ data }) => {
+    supabase.from('crm_message_templates').select('id, name, channel, body, subject, variables, attachments').eq('channel', 'whatsapp').then(({ data }) => {
       if (data) setTemplates(data as MessageTemplate[]);
     });
   }, []);
@@ -1372,6 +1425,10 @@ const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, 
   useEffect(() => {
     if (selectedTemplate && selectedContact) {
       setMessage(replaceVars(selectedTemplate.body, { שם: selectedContact.name, מוסד: institutionName }));
+      if (Array.isArray(selectedTemplate.attachments) && selectedTemplate.attachments.length > 0) {
+        // Templates carry pre-uploaded attachments — pull them into the compose state.
+        setAttachments(selectedTemplate.attachments as MessageAttachment[]);
+      }
     }
   }, [templateId, contactId, selectedTemplate, selectedContact, institutionName]);
 
@@ -1379,8 +1436,11 @@ const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, 
     ? replaceVariables(replaceVars(message, { שם: selectedContact.name, מוסד: institutionName }), selectedContact, institutionName, senderName)
     : message;
 
+  const canSend = Boolean(selectedContact?.phone) && (message.trim().length > 0 || attachments.length > 0);
+
   const send = async () => {
-    if (!selectedContact?.phone || !message.trim()) return;
+    if (!selectedContact?.phone) return;
+    if (!message.trim() && attachments.length === 0) return;
     setSending(true); setError('');
     try {
       const finalMessage = preview;
@@ -1389,6 +1449,7 @@ const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, 
         phone: selectedContact.phone,
         message: finalMessage,
         contactName: selectedContact.name,
+        attachments,
         institution_id: institutionId,
         contact_id: contactId || null,
         user_id: user?.id ?? null,
@@ -1407,7 +1468,7 @@ const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, 
 
   return (
     <ModalShell title="📱 שלח וואטסאפ" onClose={onClose} footer={
-      <><Btn style={{ flex: 1, justifyContent: 'center' }} disabled={sending || !selectedContact?.phone || !message.trim()} onClick={send}>{sending ? 'שולח...' : '📱 שלח'}</Btn><Btn variant="secondary" onClick={onClose}>ביטול</Btn></>
+      <><Btn style={{ flex: 1, justifyContent: 'center' }} disabled={sending || !canSend} onClick={send}>{sending ? 'שולח...' : '📱 שלח'}</Btn><Btn variant="secondary" onClick={onClose}>ביטול</Btn></>
     }>
       <Field label="איש קשר">
         <select style={selectStyle} value={contactId} onChange={e => setContactId(e.target.value)}>
@@ -1423,6 +1484,13 @@ const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, 
       </Field>
       <Field label="הודעה">
         <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 100 }} value={message} onChange={e => setMessage(e.target.value)} placeholder="כתוב הודעה..." />
+      </Field>
+      <Field label="קבצים מצורפים">
+        <MessageAttachmentInput
+          value={attachments}
+          onChange={setAttachments}
+          scopeId={institutionId}
+        />
       </Field>
       {message && (
         <div style={{ padding: '10px 14px', borderRadius: 8, background: '#DCF8C6', fontSize: 12, color: C.text, whiteSpace: 'pre-wrap', marginBottom: 8 }}>

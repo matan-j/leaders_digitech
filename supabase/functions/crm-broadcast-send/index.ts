@@ -251,10 +251,14 @@ Deno.serve(async (req) => {
     // 2. Fetch template
     const { data: template, error: tErr } = await supabase
       .from('crm_message_templates')
-      .select('body, subject, channel')
+      .select('body, subject, channel, attachments')
       .eq('id', broadcast.template_id)
       .single()
     if (tErr) throw new Error(`Template fetch: ${tErr.message}`)
+
+    const templateAttachments = Array.isArray((template as { attachments?: unknown }).attachments)
+      ? (template as { attachments: unknown[] }).attachments
+      : []
 
     // 3. Resolve recipients
     const recipients = await resolveRecipients(
@@ -302,6 +306,7 @@ Deno.serve(async (req) => {
                 phone,
                 message,
                 contactName: contact.name,
+                attachments: templateAttachments,
                 institution_id: institution.id,
                 contact_id: contact.id,
                 user_id: user_id ?? null,

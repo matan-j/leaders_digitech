@@ -48,6 +48,43 @@ async function logActivity(params: {
   return data?.id ?? null
 }
 
+interface MessageAttachment {
+  name: string
+  url: string
+  mime_type?: string | null
+  size?: number | null
+  kind?: 'image' | 'video' | 'audio' | 'document' | null
+  storage_path?: string | null
+}
+
+function sanitizeAttachments(input: unknown): MessageAttachment[] {
+  if (!Array.isArray(input)) return []
+  return input
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null
+      const obj = entry as Record<string, unknown>
+      const url = typeof obj.url === 'string' ? obj.url : null
+      const name = typeof obj.name === 'string' && obj.name.trim().length > 0
+        ? obj.name
+        : (url ? url.split('/').pop() ?? 'attachment' : null)
+      if (!url || !name) return null
+      const allowedKinds = ['image', 'video', 'audio', 'document'] as const
+      const rawKind = obj.kind
+      const kind = typeof rawKind === 'string' && (allowedKinds as readonly string[]).includes(rawKind)
+        ? rawKind as MessageAttachment['kind']
+        : null
+      return {
+        name,
+        url,
+        mime_type: typeof obj.mime_type === 'string' ? obj.mime_type : null,
+        size: typeof obj.size === 'number' ? obj.size : null,
+        kind,
+        storage_path: typeof obj.storage_path === 'string' ? obj.storage_path : null,
+      } as MessageAttachment
+    })
+    .filter((a): a is MessageAttachment => a !== null)
+}
+
 async function logCommunication(params: {
   institution_id: string
   contact_id?: string | null
@@ -67,6 +104,7 @@ async function logCommunication(params: {
   broadcast_id?: string | null
   template_id?: string | null
   automation_rule_id?: string | null
+  attachments?: MessageAttachment[]
   created_by?: string | null
   sent_at?: string
 }): Promise<string | null> {
@@ -92,6 +130,7 @@ async function logCommunication(params: {
     broadcast_id: params.broadcast_id ?? null,
     template_id: params.template_id ?? null,
     automation_rule_id: params.automation_rule_id ?? null,
+    attachments: params.attachments ?? [],
     status: 'sent',
     sent_at: occurredAt,
     occurred_at: occurredAt,
@@ -191,6 +230,7 @@ async function sendWhatsApp(payload: {
   phone: string
   message: string
   contactName: string
+  attachments?: unknown
   institution_id?: string
   contact_id?: string | null
   user_id?: string | null
@@ -205,31 +245,77 @@ async function sendWhatsApp(payload: {
   if (!phone.startsWith('972')) phone = '972' + phone
   const chatId = `${phone}@c.us`
 
-  const res = await fetch(
-    `${GREEN_API_URL}/waInstance${GREEN_API_INSTANCE_ID}/sendMessage/${GREEN_API_TOKEN}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chatId, message: payload.message }),
-    },
-  )
+  const attachments = sanitizeAttachments(payload.attachments)
+  const messageText = (payload.message ?? '').trim()
 
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Green API error ${res.status}: ${err}`)
+  if (!messageText && attachments.length === 0) {
+    throw new Error('Message text or at least one attachment is required')
   }
 
-  const providerData = await res.json()
-  const providerMessageId = typeof providerData?.idMessage === 'string' ? providerData.idMessage : null
+  const providerResponses: Record<string, unknown>[] = []
+  let firstProviderMessageId: string | null = null
+  let textIdMessage: string | null = null
+
+  // 1. Send the text portion first (if any).
+  if (messageText) {
+    const res = await fetch(
+      `${GREEN_API_URL}/waInstance${GREEN_API_INSTANCE_ID}/sendMessage/${GREEN_API_TOKEN}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId, message: messageText }),
+      },
+    )
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`Green API sendMessage error ${res.status}: ${err}`)
+    }
+    const data = await res.json().catch(() => ({}))
+    providerResponses.push({ kind: 'text', response: data })
+    textIdMessage = typeof data?.idMessage === 'string' ? data.idMessage : null
+    if (!firstProviderMessageId) firstProviderMessageId = textIdMessage
+  }
+
+  // 2. Send each attachment via sendFileByUrl.
+  for (let i = 0; i < attachments.length; i++) {
+    const att = attachments[i]
+    const res = await fetch(
+      `${GREEN_API_URL}/waInstance${GREEN_API_INSTANCE_ID}/sendFileByUrl/${GREEN_API_TOKEN}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chatId,
+          urlFile: att.url,
+          fileName: att.name,
+        }),
+      },
+    )
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`Green API sendFileByUrl error ${res.status}: ${err}`)
+    }
+    const data = await res.json().catch(() => ({}))
+    providerResponses.push({ kind: 'file', index: i, file: att, response: data })
+    const fileIdMessage = typeof data?.idMessage === 'string' ? data.idMessage : null
+    if (!firstProviderMessageId) firstProviderMessageId = fileIdMessage
+    // Small spacing so Green API processes files in order
+    if (i < attachments.length - 1) await new Promise(r => setTimeout(r, 250))
+  }
+
   const sentAt = new Date().toISOString()
 
   if (payload.institution_id) {
+    const activitySummary = messageText.length > 0
+      ? messageText
+      : `קבצים נשלחו: ${attachments.map(a => a.name).join(', ').slice(0, 480)}`
+
     const activityId = payload.skip_activity_log ? null : await logActivity({
       institution_id: payload.institution_id,
       contact_id: payload.contact_id,
       user_id: payload.user_id,
       type: 'וואטסאפ',
-      summary: payload.message,
+      summary: activitySummary,
     })
 
     const communicationId = await logCommunication({
@@ -237,17 +323,18 @@ async function sendWhatsApp(payload: {
       contact_id: payload.contact_id,
       activity_id: activityId,
       channel: 'whatsapp',
-      body_text: payload.message,
+      body_text: messageText,
       sender_name: CRM_EMAIL_SENDER.name,
       recipient_name: payload.contactName,
       recipient_address: phone,
       provider: 'green_api',
-      provider_message_id: providerMessageId,
-      provider_status: providerMessageId ? 'accepted' : 'sent',
-      provider_payload: providerData,
+      provider_message_id: firstProviderMessageId,
+      provider_status: firstProviderMessageId ? 'accepted' : 'sent',
+      provider_payload: { responses: providerResponses },
       broadcast_id: payload.broadcast_id,
       template_id: payload.template_id,
       automation_rule_id: payload.automation_rule_id,
+      attachments,
       created_by: payload.user_id,
       sent_at: sentAt,
     })
@@ -255,10 +342,22 @@ async function sendWhatsApp(payload: {
       throw new Error('crm_communications insert failed')
     }
 
-    return { ok: true, idMessage: providerMessageId, communication_id: communicationId }
+    return {
+      ok: true,
+      idMessage: firstProviderMessageId,
+      textIdMessage,
+      attachments_sent: attachments.length,
+      communication_id: communicationId,
+    }
   }
 
-  return { ok: true, idMessage: providerMessageId, communication_id: null }
+  return {
+    ok: true,
+    idMessage: firstProviderMessageId,
+    textIdMessage,
+    attachments_sent: attachments.length,
+    communication_id: null,
+  }
 }
 
 Deno.serve(async (req) => {

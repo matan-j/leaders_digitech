@@ -27,12 +27,22 @@ interface AudienceList {
   filter: Record<string, unknown>;
 }
 
+interface TemplateAttachment {
+  name: string;
+  url: string;
+  mime_type?: string | null;
+  size?: number | null;
+  kind?: 'image' | 'video' | 'audio' | 'document' | null;
+  storage_path?: string | null;
+}
+
 interface Template {
   id: string;
   name: string;
   stage: string | null;
   channel: Channel;
   body: string;
+  attachments?: TemplateAttachment[] | null;
 }
 
 interface CRMList {
@@ -681,7 +691,7 @@ export default function CRMBroadcast() {
     async function loadTemplates() {
       const { data } = await supabase
         .from('crm_message_templates')
-        .select('id, name, stage, channel, body')
+        .select('id, name, stage, channel, body, attachments')
         .eq('channel', channel);
       setTemplates((data ?? []) as Template[]);
     }
@@ -1378,6 +1388,20 @@ export default function CRMBroadcast() {
               {/* Message preview */}
               <div style={{ padding: '12px 14px', borderRadius: 9, background: channel === 'whatsapp' ? '#E9FBD8' : C.accentBg, marginBottom: 14, fontSize: 12, lineHeight: 1.7, color: C.text, whiteSpace: 'pre-wrap' }}>
                 {selTpl?.body.replace(/\[שם\]/g, '[שם הנמען]')}
+                {Array.isArray(selTpl?.attachments) && selTpl!.attachments!.length > 0 && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub }}>📎 קבצים שיישלחו עם ההודעה</div>
+                    {selTpl!.attachments!.map((att, idx) => {
+                      const icon = att.kind === 'image' ? '🖼️' : att.kind === 'video' ? '🎬' : att.kind === 'audio' ? '🎵' : '📄';
+                      return (
+                        <a key={`${att.url}_${idx}`} href={att.url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.text, textDecoration: 'none' }}>
+                          <span>{icon}</span>
+                          <span style={{ fontWeight: 500 }}>{att.name}</span>
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Recipient preview table */}

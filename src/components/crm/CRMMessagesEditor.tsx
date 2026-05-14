@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { callCrmAI } from '@/hooks/useCrmAI';
 import { useAuth } from '@/components/auth/AuthProvider';
+import MessageAttachmentInput, { type MessageAttachment } from '@/components/crm/MessageAttachmentInput';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,6 +19,7 @@ interface Template {
   subject: string | null;
   variables: string[];
   created_by: string | null;
+  attachments?: MessageAttachment[] | null;
 }
 
 interface PipelineStageOption {
@@ -72,11 +74,14 @@ export default function CRMMessagesEditor() {
   const [templateIds, setTemplateIds] = useState<Partial<Record<string, string>>>({});
   const [hasTemplate, setHasTemplate] = useState<Partial<Record<string, boolean>>>({});
   const [saveState, setSaveState] = useState<Partial<Record<string, 'saved' | 'dirty'>>>({});
+  // Attachments keyed by `${stage}__${channel}`, only meaningful for whatsapp channel.
+  const [stageAttachments, setStageAttachments] = useState<Partial<Record<string, MessageAttachment[]>>>({});
 
   // ── Free template state ──
   const [freeTemplates, setFreeTemplates] = useState<Template[]>([]);
   const [selectedFree, setSelectedFree] = useState<Template | null>(null);
   const [freeText, setFreeText] = useState('');
+  const [freeAttachments, setFreeAttachments] = useState<MessageAttachment[]>([]);
   const [freeSaveState, setFreeSaveState] = useState<'saved' | 'dirty' | undefined>();
   const [mode, setMode] = useState<'stage' | 'free'>('stage');
   const [showCreateFree, setShowCreateFree] = useState(false);
@@ -143,7 +148,7 @@ export default function CRMMessagesEditor() {
   const loadFreeTemplates = useCallback(async () => {
     const { data } = await supabase
       .from('crm_message_templates')
-      .select('id, stage, channel, body, subject, name, variables, created_by')
+      .select('id, stage, channel, body, subject, name, variables, created_by, attachments')
       .is('stage', null)
       .order('name', { ascending: true });
     setFreeTemplates((data as Template[]) ?? []);
@@ -154,11 +159,12 @@ export default function CRMMessagesEditor() {
     async function loadAll() {
       const { data } = await supabase
         .from('crm_message_templates')
-        .select('id, stage, channel, body, subject, name, variables, created_by');
+        .select('id, stage, channel, body, subject, name, variables, created_by, attachments');
       if (!data) return;
       const newTexts: StageTexts = {};
       const newIds: Partial<Record<string, string>> = {};
       const newHas: Partial<Record<string, boolean>> = {};
+      const newAtts: Partial<Record<string, MessageAttachment[]>> = {};
       const stagesFromTemplates = new Set<string>();
       for (const tpl of data as Template[]) {
         const s = tpl.stage as Stage | null;
@@ -169,11 +175,15 @@ export default function CRMMessagesEditor() {
           newTexts[s][c] = tpl.body;
           newIds[key(s, c)] = tpl.id;
           newHas[key(s, c)] = true;
+          if (Array.isArray(tpl.attachments) && tpl.attachments.length > 0) {
+            newAtts[key(s, c)] = tpl.attachments as MessageAttachment[];
+          }
         }
       }
       setTexts(newTexts);
       setTemplateIds(newIds);
       setHasTemplate(newHas);
+      setStageAttachments(newAtts);
       setTemplateStageNames([...stagesFromTemplates]);
     }
     loadPipelineStages();
@@ -191,6 +201,7 @@ export default function CRMMessagesEditor() {
   const selectFreeTemplate = (tpl: Template) => {
     setSelectedFree(tpl);
     setFreeText(tpl.body);
+    setFreeAttachments(Array.isArray(tpl.attachments) ? tpl.attachments : []);
     setFreeSaveState(undefined);
     setMode('free');
   };
@@ -199,10 +210,10 @@ export default function CRMMessagesEditor() {
     if (!selectedFree) return;
     await supabase
       .from('crm_message_templates')
-      .update({ body: freeText })
+      .update({ body: freeText, attachments: freeAttachments })
       .eq('id', selectedFree.id);
-    setSelectedFree(p => p ? { ...p, body: freeText } : p);
-    setFreeTemplates(p => p.map(t => t.id === selectedFree.id ? { ...t, body: freeText } : t));
+    setSelectedFree(p => p ? { ...p, body: freeText, attachments: freeAttachments } : p);
+    setFreeTemplates(p => p.map(t => t.id === selectedFree.id ? { ...t, body: freeText, attachments: freeAttachments } : t));
     setFreeSaveState('saved');
     setTimeout(() => setFreeSaveState(undefined), 2500);
   };
@@ -219,9 +230,10 @@ export default function CRMMessagesEditor() {
         body: createForm.body,
         subject: createForm.channel === 'email' ? (createForm.subject || null) : null,
         variables: VARS.map(v => v.v),
+        attachments: [],
         created_by: user?.id ?? null,
       }])
-      .select('id, stage, channel, body, subject, name, variables, created_by')
+      .select('id, stage, channel, body, subject, name, variables, created_by, attachments')
       .single();
     setCreating(false);
     if (data) {
@@ -278,6 +290,7 @@ export default function CRMMessagesEditor() {
     if (mode === 'free') { await doSaveFree(); return; }
     if (!stage) return;
     const existingId = templateIds[key(stage, channel)];
+    const attachmentsForKey = stageAttachments[key(stage, channel)] ?? [];
     const payload = {
       name: `${stage} — ${channel === 'whatsapp' ? 'וואטסאפ' : 'מייל'}`,
       stage,
@@ -285,6 +298,7 @@ export default function CRMMessagesEditor() {
       body: txt,
       subject: channel === 'email' ? `הודעה — ${stage}` : null,
       variables: VARS.map(v => v.v),
+      attachments: attachmentsForKey,
       created_by: user?.id ?? null,
     };
 
@@ -596,6 +610,25 @@ export default function CRMMessagesEditor() {
                     : `כתוב כאן את הודעת ה${currentChannel === 'whatsapp' ? 'וואטסאפ' : 'מייל'} לשלב "${stage}"...`
                 }
               />
+              {currentChannel === 'whatsapp' && (
+                <div style={{ padding: '8px 10px', border: `1px dashed ${C.border}`, borderRadius: 8, background: C.bg }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, marginBottom: 6 }}>📎 קבצים מצורפים לתבנית</div>
+                  <MessageAttachmentInput
+                    value={mode === 'free' ? freeAttachments : (stageAttachments[key(stage, channel)] ?? [])}
+                    onChange={(next) => {
+                      if (mode === 'free') {
+                        setFreeAttachments(next);
+                        setFreeSaveState('dirty');
+                      } else if (stage) {
+                        setStageAttachments(p => ({ ...p, [key(stage, channel)]: next }));
+                        setSaveState(p => ({ ...p, [key(stage, channel)]: 'dirty' }));
+                      }
+                    }}
+                    scopeId={mode === 'free' ? (selectedFree?.id ?? 'templates') : (templateIds[key(stage, channel)] ?? `stage_${stage}_${channel}`)}
+                    folder="crm-template-attachments"
+                  />
+                </div>
+              )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {currentChannel === 'whatsapp' && (
                   <span style={{ fontSize: 11, color: currentText.length > WA_LIMIT ? C.danger : C.textDim }}>

@@ -21,6 +21,8 @@ const C = {
 };
 
 // ── types ─────────────────────────────────────────────────────
+type SchoolLevel = 'elementary' | 'secondary';
+
 interface Institution {
   id: string; name: string; city: string | null; address: string | null;
   crm_class: string | null; crm_stage: string | null; crm_risk: string | null;
@@ -30,9 +32,25 @@ interface Institution {
   crm_next_step: string | null; crm_next_step_date: string | null;
   crm_interests: string[] | null; crm_pain_points: string | null;
   crm_budget: string | null; crm_notes: string | null; crm_network: string | null;
+  school_level: SchoolLevel | null;
   instructor: { id: string; full_name: string } | null;
   owner: { id: string; full_name: string } | null;
 }
+
+const SCHOOL_LEVEL_LABEL: Record<SchoolLevel, string> = {
+  elementary: 'יסודי',
+  secondary: 'על-יסודי',
+};
+
+const schoolLevelBadge = (level: SchoolLevel | null) => {
+  if (!level) return null;
+  const palette: Record<SchoolLevel, [string, string]> = {
+    elementary: ['#15803D', '#DCFCE7'],
+    secondary: ['#7C3AED', '#EDE9FE'],
+  };
+  const [col, bg] = palette[level];
+  return <Badge label={SCHOOL_LEVEL_LABEL[level]} color={col} bg={bg} />;
+};
 interface Contact {
   id: string; institution_id: string; name: string; phone: string | null;
   email: string | null; role: string | null; is_primary: boolean | null;
@@ -506,6 +524,7 @@ const EditInstitutionModal = ({ institution, pipelineStageNames, onClose, onSave
     crm_next_step_date: institution.crm_next_step_date ?? '',
     crm_pain_points: institution.crm_pain_points ?? '',
     crm_notes: institution.crm_notes ?? '',
+    school_level: institution.school_level ?? '',
   });
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
@@ -528,6 +547,7 @@ const EditInstitutionModal = ({ institution, pipelineStageNames, onClose, onSave
       crm_next_step_date: form.crm_next_step_date || null,
       crm_pain_points: form.crm_pain_points || null,
       crm_notes: form.crm_notes || null,
+      school_level: (form.school_level || null) as SchoolLevel | null,
     };
     const { error } = await supabase.from('educational_institutions').update(patch).eq('id', institution.id);
     setSaving(false);
@@ -562,6 +582,13 @@ const EditInstitutionModal = ({ institution, pipelineStageNames, onClose, onSave
             {['low', 'medium', 'high'].map(r => <option key={r}>{r}</option>)}
           </select>
         </Field>
+        <Field label="סוג מוסד">
+          <select style={selectStyle} value={form.school_level} onChange={e => set('school_level', e.target.value)}>
+            <option value="">— בחר —</option>
+            <option value="elementary">יסודי</option>
+            <option value="secondary">על-יסודי</option>
+          </select>
+        </Field>
         <Field label="מקור ליד"><input style={inputStyle} value={form.crm_lead_source} onChange={e => set('crm_lead_source', e.target.value)} /></Field>
         <Field label="פוטנציאל (₪)"><input style={inputStyle} type="number" value={form.crm_potential} onChange={e => set('crm_potential', e.target.value)} /></Field>
         <Field label="רשת חינוכית"><input style={inputStyle} value={form.crm_network} onChange={e => set('crm_network', e.target.value)} /></Field>
@@ -585,6 +612,7 @@ const TabOverview = ({ institution, activities, contacts, onOverviewSaved }: { i
     crm_budget: institution.crm_budget ?? '',
     crm_network: institution.crm_network ?? '',
     crm_lead_source: institution.crm_lead_source ?? '',
+    school_level: (institution.school_level ?? '') as string,
   });
   const [interestDraft, setInterestDraft] = useState('');
   const [notes, setNotes] = useState(institution.crm_notes ?? '');
@@ -599,11 +627,12 @@ const TabOverview = ({ institution, activities, contacts, onOverviewSaved }: { i
       crm_budget: institution.crm_budget ?? '',
       crm_network: institution.crm_network ?? '',
       crm_lead_source: institution.crm_lead_source ?? '',
+      school_level: (institution.school_level ?? '') as string,
     });
     setInterestDraft('');
     setNotes(institution.crm_notes ?? '');
     setDirty(false);
-  }, [institution.id, institution.crm_interests, institution.crm_pain_points, institution.crm_budget, institution.crm_network, institution.crm_lead_source, institution.crm_notes]);
+  }, [institution.id, institution.crm_interests, institution.crm_pain_points, institution.crm_budget, institution.crm_network, institution.crm_lead_source, institution.crm_notes, institution.school_level]);
 
   const set = (k: keyof typeof form, v: string | string[]) => {
     setForm(p => ({ ...p, [k]: v }));
@@ -633,6 +662,7 @@ const TabOverview = ({ institution, activities, contacts, onOverviewSaved }: { i
       crm_budget: form.crm_budget.trim() || null,
       crm_network: form.crm_network.trim() || null,
       crm_lead_source: form.crm_lead_source.trim() || null,
+      school_level: (form.school_level || null) as SchoolLevel | null,
     };
     const { error } = await supabase.from('educational_institutions').update(patch).eq('id', institution.id);
     setCommercialSaving(false);
@@ -657,6 +687,38 @@ const TabOverview = ({ institution, activities, contacts, onOverviewSaved }: { i
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: 'uppercase', letterSpacing: '0.5px', flex: 1 }}>מידע מסחרי</div>
           {dirty && <Btn sm onClick={saveCommercialInfo} disabled={commercialSaving}>{commercialSaving ? 'שומר...' : 'שמור'}</Btn>}
+        </div>
+        <div style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: `1px solid ${C.borderLight}`, alignItems: 'center' }}>
+          <span style={{ width: 120, fontSize: 12, color: C.textSub, fontWeight: 500, flexShrink: 0 }}>סוג מוסד</span>
+          <div style={{ flex: 1, display: 'flex', gap: 6 }}>
+            {(['elementary', 'secondary'] as const).map(level => {
+              const active = form.school_level === level;
+              const palette: Record<SchoolLevel, [string, string]> = {
+                elementary: ['#15803D', '#DCFCE7'],
+                secondary: ['#7C3AED', '#EDE9FE'],
+              };
+              const [col, bg] = palette[level];
+              return (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => set('school_level', active ? '' : level)}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 999,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: active ? bg : C.surface,
+                    color: active ? col : C.textSub,
+                    border: `1px solid ${active ? col : C.border}`,
+                  }}
+                >
+                  {SCHOOL_LEVEL_LABEL[level]}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: `1px solid ${C.borderLight}` }}>
           <span style={{ width: 120, fontSize: 12, color: C.textSub, fontWeight: 500, flexShrink: 0 }}>תחומי עניין</span>
@@ -1761,6 +1823,7 @@ const CRMInstitution = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
                 <span style={{ fontSize: 18, fontWeight: 800 }}>{institution.name}</span>
                 {classBadge(institution.crm_class)}
+                {schoolLevelBadge(institution.school_level)}
                 {stageBadge(institution.crm_stage, institution.crm_stage ? stageColors[institution.crm_stage] : undefined)}
                 {riskBadge(institution.crm_risk)}
               </div>

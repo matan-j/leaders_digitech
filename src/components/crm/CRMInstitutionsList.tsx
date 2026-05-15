@@ -72,6 +72,18 @@ interface ContactStatus {
   legacy_crm_risk: string | null;
 }
 
+type SchoolLevel = 'elementary' | 'secondary';
+
+const SCHOOL_LEVEL_LABEL: Record<SchoolLevel, string> = {
+  elementary: 'יסודי',
+  secondary: 'על-יסודי',
+};
+
+const SCHOOL_LEVEL_PALETTE: Record<SchoolLevel, { color: string; bg: string }> = {
+  elementary: { color: '#15803D', bg: '#DCFCE7' },
+  secondary: { color: '#7C3AED', bg: '#EDE9FE' },
+};
+
 interface InstitutionRow {
   id: string;
   name: string;
@@ -89,6 +101,7 @@ interface InstitutionRow {
   crm_contact_status_id: string | null;
   contact_status: ContactStatus | null;
   has_files: boolean;
+  school_level: SchoolLevel | null;
   instructor: { id: string; full_name: string } | null;
   contacts: CRMContact[];
   primaryPhone?: string | null;
@@ -98,7 +111,7 @@ interface PipelineStageOption {
   name: string;
 }
 
-type InstitutionPatch = Partial<Pick<InstitutionRow, 'city' | 'crm_stage' | 'crm_last_contact_at'>>;
+type InstitutionPatch = Partial<Pick<InstitutionRow, 'city' | 'crm_stage' | 'crm_last_contact_at' | 'school_level'>>;
 type ContactPatch = Partial<Pick<CRMContact, 'name' | 'role' | 'phone'>>;
 
 // ── sort types ────────────────────────────────────────────────
@@ -111,6 +124,7 @@ type PersistedTableState = {
   filterStage: string;
   filterCity: string;
   filterInstructor: string;
+  filterSchoolLevel: string;
   sortKey: SortKey;
   sortDir: SortDir;
 };
@@ -125,6 +139,7 @@ const defaultTableState: PersistedTableState = {
   filterStage: 'הכל',
   filterCity: 'הכל',
   filterInstructor: 'הכל',
+  filterSchoolLevel: 'הכל',
   sortKey: 'city',
   sortDir: 'asc',
 };
@@ -148,6 +163,7 @@ const getPersistedTableState = (params: URLSearchParams, mode: string): Persiste
     filterStage: params.get('stage') ?? stored.filterStage ?? defaultTableState.filterStage,
     filterCity: params.get('city') ?? stored.filterCity ?? defaultTableState.filterCity,
     filterInstructor: params.get('instructor') ?? stored.filterInstructor ?? defaultTableState.filterInstructor,
+    filterSchoolLevel: params.get('level') ?? stored.filterSchoolLevel ?? defaultTableState.filterSchoolLevel,
     sortKey: SORT_KEYS.includes(sortKey as SortKey) ? sortKey as SortKey : defaultTableState.sortKey,
     sortDir: SORT_DIRS.includes(sortDir as SortDir) ? sortDir as SortDir : defaultTableState.sortDir,
   };
@@ -456,6 +472,94 @@ const RiskDropdown = ({ institutionId, statusId, legacyRisk, statuses, onChanged
               {o.label}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── School level dropdown ────────────────────────────────────
+
+interface SchoolLevelDropdownProps {
+  value: SchoolLevel | null;
+  onChange: (value: SchoolLevel | null) => void;
+}
+
+const SCHOOL_LEVEL_OPTIONS: { value: SchoolLevel | null; label: string }[] = [
+  { value: 'elementary', label: 'יסודי' },
+  { value: 'secondary', label: 'על-יסודי' },
+  { value: null, label: 'ללא סיווג' },
+];
+
+const SchoolLevelDropdown = ({ value, onChange }: SchoolLevelDropdownProps) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const palette = value ? SCHOOL_LEVEL_PALETTE[value] : { color: C.textDim, bg: C.surface };
+  const label = value ? SCHOOL_LEVEL_LABEL[value] : '+ סוג';
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handleSelect = (next: SchoolLevel | null) => {
+    setOpen(false);
+    if (next !== value) onChange(next);
+  };
+
+  return (
+    <div style={{ position: 'relative' }} ref={ref} onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 5,
+          padding: '3px 11px',
+          borderRadius: 999,
+          fontSize: 11,
+          fontWeight: 600,
+          background: palette.bg,
+          color: palette.color,
+          border: `1px solid ${value ? palette.color + '33' : C.border}`,
+          cursor: 'pointer',
+          outline: 'none',
+        }}
+      >
+        {label}
+        <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 200,
+          background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.13)', overflow: 'hidden', minWidth: 130,
+        }}>
+          {SCHOOL_LEVEL_OPTIONS.map((opt) => {
+            const isActive = opt.value === value;
+            const optColor = opt.value ? SCHOOL_LEVEL_PALETTE[opt.value].color : C.textSub;
+            return (
+              <div
+                key={opt.label}
+                onClick={() => handleSelect(opt.value)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 7, padding: '7px 12px',
+                  fontSize: 12, cursor: 'pointer', color: C.text,
+                  background: isActive ? C.bg : undefined,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = C.bg)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = isActive ? C.bg : '')}
+              >
+                <div style={{ width: 9, height: 9, borderRadius: '50%', background: optColor }} />
+                {opt.label}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -928,6 +1032,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
   const [filterStage, setFilterStage] = useState(persistedTableState.filterStage);
   const [filterCity, setFilterCity] = useState(persistedTableState.filterCity);
   const [filterInstructor, setFilterInstructor] = useState(persistedTableState.filterInstructor);
+  const [filterSchoolLevel, setFilterSchoolLevel] = useState(persistedTableState.filterSchoolLevel);
 
   const [sortKey, setSortKey] = useState<SortKey>(persistedTableState.sortKey);
   const [sortDir, setSortDir] = useState<SortDir>(persistedTableState.sortDir);
@@ -939,6 +1044,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
       filterStage,
       filterCity,
       filterInstructor,
+      filterSchoolLevel,
       sortKey,
       sortDir,
     };
@@ -958,11 +1064,12 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
       setOrDelete('stage', filterStage, defaultTableState.filterStage);
       setOrDelete('city', filterCity, defaultTableState.filterCity);
       setOrDelete('instructor', filterInstructor, defaultTableState.filterInstructor);
+      setOrDelete('level', filterSchoolLevel, defaultTableState.filterSchoolLevel);
       setOrDelete('sort', sortKey, defaultTableState.sortKey);
       setOrDelete('dir', sortDir, defaultTableState.sortDir);
       return next;
     }, { replace: true });
-  }, [filterCity, filterClass, filterInstructor, filterStage, mode, search, setSearchParams, sortDir, sortKey]);
+  }, [filterCity, filterClass, filterInstructor, filterSchoolLevel, filterStage, mode, search, setSearchParams, sortDir, sortKey]);
 
   useEffect(() => {
     if (mode === 'leads') return;
@@ -1006,7 +1113,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
         id, name, city,
         crm_class, crm_stage, crm_last_contact_at, crm_next_step, crm_next_step_date,
         crm_owner_id, crm_assigned_instructor_id,
-        crm_potential, crm_notes, crm_risk, crm_contact_status_id, has_files,
+        crm_potential, crm_notes, crm_risk, crm_contact_status_id, has_files, school_level,
         contact_status:crm_contact_status_id (id, key, label, color, order_index, legacy_crm_risk),
         instructor:crm_assigned_instructor_id (id, full_name),
         contacts:crm_contacts (id, name, phone, role, is_primary)
@@ -1088,6 +1195,13 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
       if (filterCity !== 'הכל' && r.city !== filterCity) return false;
       if (filterInstructor === 'לא משויך' && r.instructor) return false;
       if (filterInstructor !== 'הכל' && filterInstructor !== 'לא משויך' && r.instructor?.full_name !== filterInstructor) return false;
+      if (filterSchoolLevel !== 'הכל') {
+        if (filterSchoolLevel === 'ללא סיווג') {
+          if (r.school_level) return false;
+        } else if (r.school_level !== filterSchoolLevel) {
+          return false;
+        }
+      }
       return true;
     }),
     mode === 'leads' ? sortKey : (sortKey === 'crm_stage' ? defaultTableState.sortKey : sortKey),
@@ -1096,13 +1210,14 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
   );
 
   const unassignedCount = rows.filter((r) => !r.instructor).length;
-  const hasActiveFilters = filterClass !== 'הכל' || filterStage !== 'הכל' || filterCity !== 'הכל' || filterInstructor !== 'הכל';
+  const hasActiveFilters = filterClass !== 'הכל' || filterStage !== 'הכל' || filterCity !== 'הכל' || filterInstructor !== 'הכל' || filterSchoolLevel !== 'הכל';
 
   const clearFilters = () => {
     setFilterClass('הכל');
     setFilterStage('הכל');
     setFilterCity('הכל');
     setFilterInstructor('הכל');
+    setFilterSchoolLevel('הכל');
   };
 
   const formatLastContact = (iso: string | null) => {
@@ -1324,6 +1439,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
   const SORTABLE_COLS: { label: string; key?: SortKey; colSpan?: number }[] = [
     { label: 'מוסד', key: 'name' },
     { label: 'עיר', key: 'city' },
+    { label: 'סוג מוסד' },
     { label: 'סטטוס' },
     { label: 'שלב', key: 'crm_stage' },
     { label: 'אנשי קשר' },
@@ -1406,6 +1522,12 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
           <option value="הכל">מדריך</option>
           <option value="לא משויך">לא משויך</option>
           {instructorNames.map((o) => <option key={o}>{o}</option>)}
+        </select>
+        <select value={filterSchoolLevel} onChange={(e) => setFilterSchoolLevel(e.target.value)} style={filterSelectStyle(filterSchoolLevel !== 'הכל')}>
+          <option value="הכל">סוג מוסד</option>
+          <option value="elementary">יסודי</option>
+          <option value="secondary">על-יסודי</option>
+          <option value="ללא סיווג">ללא סיווג</option>
         </select>
         {hasActiveFilters && (
           <button onClick={clearFilters} style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${C.danger}30`, background: C.dangerBg, color: C.danger, fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>
@@ -1494,6 +1616,14 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
                         placeholder="+ עיר"
                         onSave={(value) => updateInstitutionField(row.id, { city: value.trim() || null })}
                         style={{ fontSize: 12, color: C.textSub }}
+                      />
+                    </td>
+
+                    {/* School level */}
+                    <td style={{ padding: '9px 12px' }}>
+                      <SchoolLevelDropdown
+                        value={row.school_level}
+                        onChange={(next) => updateInstitutionField(row.id, { school_level: next })}
                       />
                     </td>
 

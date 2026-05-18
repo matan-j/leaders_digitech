@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { callCrmAI } from '@/hooks/useCrmAI';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import InstitutionQuotesTab from '@/components/quotes/InstitutionQuotesTab';
+import InstitutionAcademicOrdersTab from '@/components/academicYearOrders/InstitutionAcademicOrdersTab';
 import MessageAttachmentInput, { type MessageAttachment } from '@/components/crm/MessageAttachmentInput';
 
 // ── design tokens ─────────────────────────────────────────────
@@ -1879,6 +1880,7 @@ const CRMInstitution = () => {
               { value: 'files',          label: 'קבצים' },
               { value: 'ai',             label: 'AI' },
               { value: 'quotes',         label: 'הצעות מחיר' },
+              { value: 'academic-orders', label: 'הזמנות לשנה"ל' },
             ] as { value: string; label: string }[]).map(t => (
               <TabsTrigger key={t.value} value={t.value}
                 className="rounded-none bg-transparent px-4 py-2 text-xs font-normal text-gray-500 border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-blue-600 data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:bg-transparent"
@@ -1922,6 +1924,14 @@ const CRMInstitution = () => {
                   institutionName={institution.name}
                   contacts={contacts}
                   createTrigger={quoteCreateTrigger}
+                />
+              )}
+            </TabsContent>
+            <TabsContent value="academic-orders">
+              {id && (
+                <InstitutionAcademicOrdersTab
+                  institutionId={id}
+                  institutionName={institution.name}
                 />
               )}
             </TabsContent>

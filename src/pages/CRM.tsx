@@ -5,14 +5,23 @@ import CRMInstitutionsList from '@/components/crm/CRMInstitutionsList';
 import CRMPipeline from '@/components/crm/CRMPipeline';
 import CRMMessagesEditor from '@/components/crm/CRMMessagesEditor';
 import CRMBroadcast from '@/components/crm/CRMBroadcast';
+import CRMAcademicOrders from '@/components/crm/CRMAcademicOrders';
 
-export type CRMTab = 'dashboard' | 'leads' | 'customers' | 'pipeline' | 'messages' | 'broadcast';
+export type CRMTab =
+  | 'dashboard'
+  | 'leads'
+  | 'customers'
+  | 'pipeline'
+  | 'academic-orders'
+  | 'messages'
+  | 'broadcast';
 
 const TAB_FROM_LABEL: Record<string, CRMTab> = {
   'דשבורד': 'dashboard',
   'לידים': 'leads',
   'לקוחות': 'customers',
   'פייפליין': 'pipeline',
+  'הזמנות לשנה"ל': 'academic-orders',
   'עורך הודעות': 'messages',
   'שליחה בקבוצות': 'broadcast',
 };
@@ -25,12 +34,13 @@ const C = {
 };
 
 const NAV_TABS: { id: CRMTab; label: string }[] = [
-  { id: 'dashboard', label: 'דשבורד' },
-  { id: 'leads',     label: 'לידים' },
-  { id: 'customers', label: 'לקוחות' },
-  { id: 'pipeline',  label: 'פייפליין' },
-  { id: 'messages',  label: 'עורך הודעות' },
-  { id: 'broadcast', label: 'שליחה בקבוצות' },
+  { id: 'dashboard',       label: 'דשבורד' },
+  { id: 'leads',           label: 'לידים' },
+  { id: 'customers',       label: 'לקוחות' },
+  { id: 'pipeline',        label: 'פייפליין' },
+  { id: 'academic-orders', label: 'הזמנות לשנה"ל' },
+  { id: 'messages',        label: 'עורך הודעות' },
+  { id: 'broadcast',       label: 'שליחה בקבוצות' },
 ];
 
 const CRM_TAB_KEYS = NAV_TABS.map((tab) => tab.id);
@@ -96,12 +106,13 @@ const CRM = () => {
 
       {/* Tab content */}
       <div>
-        {activeTab === 'dashboard' && <CRMDashboard setTab={handleTabChange} onOpenCsvImport={() => { setOpenCsvImport(true); handleTabChange('leads'); }} />}
-        {activeTab === 'leads'     && <CRMInstitutionsList setTab={handleTabChange} mode="leads" openCsvImport={openCsvImport} />}
-        {activeTab === 'customers' && <CRMInstitutionsList setTab={handleTabChange} mode="customers" />}
-        {activeTab === 'pipeline'  && <CRMPipeline />}
-        {activeTab === 'messages'  && <CRMMessagesEditor />}
-        {activeTab === 'broadcast' && <CRMBroadcast />}
+        {activeTab === 'dashboard'        && <CRMDashboard setTab={handleTabChange} onOpenCsvImport={() => { setOpenCsvImport(true); handleTabChange('leads'); }} />}
+        {activeTab === 'leads'            && <CRMInstitutionsList setTab={handleTabChange} mode="leads" openCsvImport={openCsvImport} />}
+        {activeTab === 'customers'        && <CRMInstitutionsList setTab={handleTabChange} mode="customers" />}
+        {activeTab === 'pipeline'         && <CRMPipeline />}
+        {activeTab === 'academic-orders'  && <CRMAcademicOrders />}
+        {activeTab === 'messages'         && <CRMMessagesEditor />}
+        {activeTab === 'broadcast'        && <CRMBroadcast />}
       </div>
     </div>
   );

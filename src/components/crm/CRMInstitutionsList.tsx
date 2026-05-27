@@ -125,6 +125,7 @@ type PersistedTableState = {
   filterCity: string;
   filterInstructor: string;
   filterSchoolLevel: string;
+  filterContactStatus: string;
   sortKey: SortKey;
   sortDir: SortDir;
 };
@@ -140,6 +141,7 @@ const defaultTableState: PersistedTableState = {
   filterCity: 'הכל',
   filterInstructor: 'הכל',
   filterSchoolLevel: 'הכל',
+  filterContactStatus: 'הכל',
   sortKey: 'city',
   sortDir: 'asc',
 };
@@ -164,6 +166,7 @@ const getPersistedTableState = (params: URLSearchParams, mode: string): Persiste
     filterCity: params.get('city') ?? stored.filterCity ?? defaultTableState.filterCity,
     filterInstructor: params.get('instructor') ?? stored.filterInstructor ?? defaultTableState.filterInstructor,
     filterSchoolLevel: params.get('level') ?? stored.filterSchoolLevel ?? defaultTableState.filterSchoolLevel,
+    filterContactStatus: params.get('status') ?? stored.filterContactStatus ?? defaultTableState.filterContactStatus,
     sortKey: SORT_KEYS.includes(sortKey as SortKey) ? sortKey as SortKey : defaultTableState.sortKey,
     sortDir: SORT_DIRS.includes(sortDir as SortDir) ? sortDir as SortDir : defaultTableState.sortDir,
   };
@@ -1033,6 +1036,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
   const [filterCity, setFilterCity] = useState(persistedTableState.filterCity);
   const [filterInstructor, setFilterInstructor] = useState(persistedTableState.filterInstructor);
   const [filterSchoolLevel, setFilterSchoolLevel] = useState(persistedTableState.filterSchoolLevel);
+  const [filterContactStatus, setFilterContactStatus] = useState(persistedTableState.filterContactStatus);
 
   const [sortKey, setSortKey] = useState<SortKey>(persistedTableState.sortKey);
   const [sortDir, setSortDir] = useState<SortDir>(persistedTableState.sortDir);
@@ -1045,6 +1049,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
       filterCity,
       filterInstructor,
       filterSchoolLevel,
+      filterContactStatus,
       sortKey,
       sortDir,
     };
@@ -1065,11 +1070,12 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
       setOrDelete('city', filterCity, defaultTableState.filterCity);
       setOrDelete('instructor', filterInstructor, defaultTableState.filterInstructor);
       setOrDelete('level', filterSchoolLevel, defaultTableState.filterSchoolLevel);
+      setOrDelete('status', filterContactStatus, defaultTableState.filterContactStatus);
       setOrDelete('sort', sortKey, defaultTableState.sortKey);
       setOrDelete('dir', sortDir, defaultTableState.sortDir);
       return next;
     }, { replace: true });
-  }, [filterCity, filterClass, filterInstructor, filterSchoolLevel, filterStage, mode, search, setSearchParams, sortDir, sortKey]);
+  }, [filterCity, filterClass, filterContactStatus, filterInstructor, filterSchoolLevel, filterStage, mode, search, setSearchParams, sortDir, sortKey]);
 
   useEffect(() => {
     if (mode === 'leads') return;
@@ -1202,6 +1208,10 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
           return false;
         }
       }
+      if (filterContactStatus !== 'הכל') {
+        const effectiveStatus = getContactStatus(contactStatuses, r.crm_contact_status_id, r.crm_risk);
+        if (effectiveStatus?.id !== filterContactStatus) return false;
+      }
       return true;
     }),
     mode === 'leads' ? sortKey : (sortKey === 'crm_stage' ? defaultTableState.sortKey : sortKey),
@@ -1210,7 +1220,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
   );
 
   const unassignedCount = rows.filter((r) => !r.instructor).length;
-  const hasActiveFilters = filterClass !== 'הכל' || filterStage !== 'הכל' || filterCity !== 'הכל' || filterInstructor !== 'הכל' || filterSchoolLevel !== 'הכל';
+  const hasActiveFilters = filterClass !== 'הכל' || filterStage !== 'הכל' || filterCity !== 'הכל' || filterInstructor !== 'הכל' || filterSchoolLevel !== 'הכל' || filterContactStatus !== 'הכל';
 
   const clearFilters = () => {
     setFilterClass('הכל');
@@ -1218,6 +1228,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
     setFilterCity('הכל');
     setFilterInstructor('הכל');
     setFilterSchoolLevel('הכל');
+    setFilterContactStatus('הכל');
   };
 
   const formatLastContact = (iso: string | null) => {
@@ -1528,6 +1539,12 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
           <option value="elementary">יסודי</option>
           <option value="secondary">על-יסודי</option>
           <option value="ללא סיווג">ללא סיווג</option>
+        </select>
+        <select value={filterContactStatus} onChange={(e) => setFilterContactStatus(e.target.value)} style={filterSelectStyle(filterContactStatus !== 'הכל')}>
+          <option value="הכל">סטטוס</option>
+          {(contactStatuses.length > 0 ? contactStatuses : LEGACY_CONTACT_STATUS_FALLBACK).map((s) => (
+            <option key={s.id} value={s.id}>{s.label}</option>
+          ))}
         </select>
         {hasActiveFilters && (
           <button onClick={clearFilters} style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${C.danger}30`, background: C.dangerBg, color: C.danger, fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>

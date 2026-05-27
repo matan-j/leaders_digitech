@@ -40,19 +40,23 @@ COMMENT ON TABLE public.academic_year_order_group_instances IS
 
 ALTER TABLE public.academic_year_order_group_instances ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS ayogi_select ON public.academic_year_order_group_instances;
 CREATE POLICY ayogi_select ON public.academic_year_order_group_instances
   FOR SELECT
   USING (public.get_current_user_role() IN ('admin', 'pedagogical_manager'));
 
+DROP POLICY IF EXISTS ayogi_insert ON public.academic_year_order_group_instances;
 CREATE POLICY ayogi_insert ON public.academic_year_order_group_instances
   FOR INSERT
   WITH CHECK (public.get_current_user_role() IN ('admin', 'pedagogical_manager'));
 
+DROP POLICY IF EXISTS ayogi_update ON public.academic_year_order_group_instances;
 CREATE POLICY ayogi_update ON public.academic_year_order_group_instances
   FOR UPDATE
   USING (public.get_current_user_role() IN ('admin', 'pedagogical_manager'))
   WITH CHECK (public.get_current_user_role() IN ('admin', 'pedagogical_manager'));
 
+DROP POLICY IF EXISTS ayogi_delete ON public.academic_year_order_group_instances;
 CREATE POLICY ayogi_delete ON public.academic_year_order_group_instances
   FOR DELETE
   USING (public.get_current_user_role() IN ('admin', 'pedagogical_manager'));

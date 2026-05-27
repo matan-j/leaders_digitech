@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarRange, Loader2, Plus, Trash2, Users } from 'lucide-react';
+import { CalendarRange, Loader2, Pencil, Plus, Trash2, Users } from 'lucide-react';
 
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/components/ui/use-toast';
@@ -22,6 +22,7 @@ import {
 } from '@/types/academicYearOrders';
 import { regionDef } from '@/lib/academicYearOrders/regions';
 import { deleteOrder, listOrdersByInstitution } from '@/lib/academicYearOrders/api';
+import AcademicYearOrderEditorSheet from './AcademicYearOrderEditorSheet';
 
 interface InstitutionAcademicOrdersTabProps {
   institutionId: string;
@@ -63,6 +64,8 @@ const InstitutionAcademicOrdersTab: React.FC<InstitutionAcademicOrdersTabProps> 
 
   const [orders, setOrders] = useState<AcademicYearOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -87,11 +90,19 @@ const InstitutionAcademicOrdersTab: React.FC<InstitutionAcademicOrdersTabProps> 
   }, [institutionId]);
 
   const handleCreate = () => {
-    // Editor dialog comes in Phase 4. For now, surface a clear notice.
-    toast({
-      title: 'יצירת הזמנה תתאפשר בקרוב',
-      description: 'הטופס יושק בשלב הבא של המודול.',
-    });
+    if (!canEdit) return;
+    setEditingOrderId(null);
+    setEditorOpen(true);
+  };
+
+  const handleEdit = (order: AcademicYearOrder) => {
+    if (!canEdit) return;
+    setEditingOrderId(order.id);
+    setEditorOpen(true);
+  };
+
+  const handleSaved = () => {
+    fetchOrders();
   };
 
   const handleDelete = async (order: AcademicYearOrder) => {
@@ -181,14 +192,25 @@ const InstitutionAcademicOrdersTab: React.FC<InstitutionAcademicOrdersTabProps> 
                     </TableCell>
                     <TableCell>
                       {canEdit && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDelete(order)}
-                          title="מחיקה"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleEdit(order)}
+                            title="עריכה"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDelete(order)}
+                            title="מחיקה"
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       )}
                     </TableCell>
                   </TableRow>
@@ -198,6 +220,15 @@ const InstitutionAcademicOrdersTab: React.FC<InstitutionAcademicOrdersTabProps> 
           </Table>
         </div>
       )}
+
+      <AcademicYearOrderEditorSheet
+        institutionId={institutionId}
+        institutionName={institutionName}
+        orderId={editingOrderId}
+        open={editorOpen}
+        onOpenChange={setEditorOpen}
+        onSaved={handleSaved}
+      />
     </div>
   );
 };

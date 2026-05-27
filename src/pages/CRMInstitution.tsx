@@ -89,7 +89,7 @@ interface CrmFile {
   name: string; size: number; created_at: string; path: string;
 }
 
-const INSTITUTION_TABS = ['overview', 'contacts', 'opportunities', 'activity', 'communication', 'files', 'ai', 'quotes'] as const;
+const INSTITUTION_TABS = ['overview', 'contacts', 'opportunities', 'activity', 'communication', 'files', 'ai', 'quotes', 'academic-orders'] as const;
 type InstitutionTab = typeof INSTITUTION_TABS[number];
 
 const parseInstitutionTab = (tab: string | null): InstitutionTab =>

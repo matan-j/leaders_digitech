@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Edit, Copy, FileText, Trash2, Loader2 } from 'lucide-react';
+import { Plus, Edit, Copy, FileText, Trash2, Loader2, CalendarRange } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/table';
 
 import QuoteEditorDialog from './QuoteEditorDialog';
+import AcademicYearOrderEditorSheet from '@/components/academicYearOrders/AcademicYearOrderEditorSheet';
 import { formatILS } from '@/lib/quotes/money';
 import { QUOTE_STATUS_LABELS } from '@/types/quotes';
 import type { Quote } from '@/types/quotes';
@@ -65,6 +66,8 @@ const InstitutionQuotesTab: React.FC<InstitutionQuotesTabProps> = ({
   // Tracks whether the editor is currently working on a brand-new draft.
   // When it is, closing the editor without saving will auto-delete the empty quote.
   const [editorIsNew, setEditorIsNew] = useState(false);
+  const [orderSheetOpen, setOrderSheetOpen] = useState(false);
+  const [sourceQuoteIdForOrder, setSourceQuoteIdForOrder] = useState<string | null>(null);
 
   const fetchQuotes = async () => {
     setLoading(true);
@@ -147,6 +150,12 @@ const InstitutionQuotesTab: React.FC<InstitutionQuotesTabProps> = ({
     setEditingId(q.id);
     setEditorIsNew(false);
     setEditorOpen(true);
+  };
+
+  const handleCreateOrderFromQuote = (q: Quote) => {
+    if (!canEdit) return;
+    setSourceQuoteIdForOrder(q.id);
+    setOrderSheetOpen(true);
   };
 
   const handleDuplicate = async (q: Quote) => {
@@ -301,6 +310,15 @@ const InstitutionQuotesTab: React.FC<InstitutionQuotesTabProps> = ({
                       </Button>
                       {canEdit && (
                         <>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleCreateOrderFromQuote(q)}
+                            title="צור הזמנה לשנה&quot;ל מהצעה זו"
+                            className="text-blue-600 hover:text-blue-700"
+                          >
+                            <CalendarRange className="h-4 w-4" />
+                          </Button>
                           <Button size="sm" variant="ghost" onClick={() => handleDuplicate(q)} title="שכפול">
                             <Copy className="h-4 w-4" />
                           </Button>
@@ -333,6 +351,21 @@ const InstitutionQuotesTab: React.FC<InstitutionQuotesTabProps> = ({
           onSaved={fetchQuotes}
         />
       )}
+
+      <AcademicYearOrderEditorSheet
+        institutionId={institutionId}
+        institutionName={institutionName}
+        orderId={null}
+        open={orderSheetOpen}
+        onOpenChange={(o) => {
+          setOrderSheetOpen(o);
+          if (!o) setSourceQuoteIdForOrder(null);
+        }}
+        onSaved={() => {
+          toast({ title: 'הזמנה לשנה"ל נוצרה' });
+        }}
+        initialSourceQuoteId={sourceQuoteIdForOrder}
+      />
     </div>
   );
 };

@@ -30,7 +30,21 @@ export type AcademicYearOrderAuditAction =
   | 'group_days_changed'
   | 'group_time_changed'
   | 'group_count_changed'
-  | 'group_scheduling_status_changed';
+  | 'group_scheduling_status_changed'
+  | 'group_instance_linked'
+  | 'group_instance_unlinked';
+
+// Phase 8: link row between an order group and an actual course_instance.
+// The supabase generated types haven't been regenerated yet — keep this
+// manual interface in sync with the migration shape.
+export interface AcademicYearOrderGroupInstance {
+  id: string;
+  group_id: string;
+  course_instance_id: string;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+}
 
 // ─── Row types (read from DB) ────────────────────────────────────────────────
 
@@ -81,6 +95,8 @@ export const ORDER_AUDIT_ACTION_LABELS: Record<AcademicYearOrderAuditAction, str
   group_time_changed: 'שינוי שעות',
   group_count_changed: 'שינוי כמות קבוצות',
   group_scheduling_status_changed: 'שינוי סטטוס שיבוץ',
+  group_instance_linked: 'נקשר שיבוץ',
+  group_instance_unlinked: 'בוטל שיבוץ',
 };
 
 // ─── RPC payload shapes (passed to save_academic_year_order) ─────────────────

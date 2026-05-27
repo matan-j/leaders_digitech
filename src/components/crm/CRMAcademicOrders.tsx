@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarRange, Filter, Loader2, Search, X } from 'lucide-react';
+import { CalendarRange, Filter, Loader2, Pencil, Search, X } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/components/ui/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,6 +33,7 @@ import {
 } from '@/types/academicYearOrders';
 import { ACADEMIC_YEARS } from '@/lib/academicYearOrders/academic-years';
 import { REGIONS, regionDef } from '@/lib/academicYearOrders/regions';
+import AcademicYearOrderEditorSheet from '@/components/academicYearOrders/AcademicYearOrderEditorSheet';
 
 const ALL = '__all__';
 
@@ -62,6 +64,9 @@ const formatDate = (iso: string | null): string =>
 const CRMAcademicOrders: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const role = user?.user_metadata?.role as string | undefined;
+  const canEdit = role === 'admin' || role === 'pedagogical_manager';
 
   const [rows, setRows] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,6 +76,13 @@ const CRMAcademicOrders: React.FC = () => {
   const [region, setRegion] = useState<string>(ALL);
   const [schedStatus, setSchedStatus] = useState<string>(ALL);
   const [search, setSearch] = useState<string>('');
+
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+  const [editingInstitution, setEditingInstitution] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -129,6 +141,22 @@ const CRMAcademicOrders: React.FC = () => {
 
   const goToInstitution = (institutionId: string) => {
     navigate(`/crm/institution/${institutionId}?tab=academic-orders`);
+  };
+
+  const openEditor = (row: OrderRow, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!canEdit) return;
+    setEditingOrderId(row.id);
+    setEditingInstitution({ id: row.institution_id, name: row.institution_name ?? '—' });
+    setEditorOpen(true);
+  };
+
+  const handleEditorOpenChange = (open: boolean) => {
+    setEditorOpen(open);
+    if (!open) {
+      setEditingOrderId(null);
+      setEditingInstitution(null);
+    }
   };
 
   return (
@@ -235,6 +263,7 @@ const CRMAcademicOrders: React.FC = () => {
                 <TableHead className="text-right">עיר</TableHead>
                 <TableHead className="text-right">אזור</TableHead>
                 <TableHead className="text-right">מצב שיבוץ</TableHead>
+                <TableHead className="text-right w-12">פעולות</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -272,12 +301,35 @@ const CRMAcademicOrders: React.FC = () => {
                         {ORDER_SCHEDULING_STATUS_LABELS[sch] ?? sch}
                       </Badge>
                     </TableCell>
+                    <TableCell>
+                      {canEdit && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => openEditor(r, e)}
+                          title="עריכה"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </TableCell>
                   </TableRow>
                 );
               })}
             </TableBody>
           </Table>
         </div>
+      )}
+
+      {editingInstitution && (
+        <AcademicYearOrderEditorSheet
+          institutionId={editingInstitution.id}
+          institutionName={editingInstitution.name}
+          orderId={editingOrderId}
+          open={editorOpen}
+          onOpenChange={handleEditorOpenChange}
+          onSaved={() => fetchOrders()}
+        />
       )}
     </div>
   );

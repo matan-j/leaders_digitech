@@ -8,6 +8,7 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import Profile from '@/pages/Profile';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { BrandLogo } from '@/components/layout/BrandLogo';
 
 interface CRMNotification {
   id: string; title: string; body: string | null;
@@ -137,71 +138,80 @@ const navigationItems = [
       }
       console.log("datatataq ", data);
       setProfile(data);
-     
+
     } catch (error) {
       console.error("Error fetching profile:", error);
-    } 
+    }
   };
     useEffect(() => {
       fetchProfile();
     }, []);
   console.log('[Nav] role:', user?.user_metadata?.role, 'isCrmUser:', isCrmUser);
+
+  const renderNavItems = () => (
+    <div className="space-y-2">
+      {navigationItems.map((item) => {
+        const Icon = item.icon;
+        const isActive = location.pathname === item.path;
+        return (
+          <Link
+            key={item.path}
+            to={item.path}
+            onClick={() => setIsOpen(false)}
+            className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
+              isActive
+                ? 'bg-accent text-accent-foreground border-r-4 border-primary'
+                : 'text-foreground hover:bg-muted'
+            }`}
+          >
+            <Icon className="h-5 w-5 ml-3" />
+            <span>{item.label}</span>
+          </Link>
+        );
+      })}
+    </div>
+  );
+
   return (
     <>
-      {/* Desktop Navigation */}
-      <header className="hidden md:block bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg border-b border-blue-800">
-        <div className="  px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            
-            {/* Logo */}
-            <div className="flex items-center gap-2">
-           
-                     <Sheet open={isOpen} onOpenChange={setIsOpen}>
+      {/* Desktop Header */}
+      <header className="hidden md:block bg-brand-gradient shadow-brand-header">
+        <div className="px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center h-16 gap-4">
+
+            {/* Start cluster: menu + greeting */}
+            <div className="flex items-center gap-2 justify-self-start">
+              <Sheet open={isOpen} onOpenChange={setIsOpen}>
                 <SheetTrigger asChild>
                   <Button variant="ghost" size="sm" className="text-white hover:bg-white/10">
-                    <Menu className=" hidden  md:block md:h-6 md:w-6" />
+                    <Menu className="h-6 w-6" />
                   </Button>
                 </SheetTrigger>
-                <SheetContent side="right" className="w-80 bg-white">
+                <SheetContent side="right" className="w-80 bg-card">
                   <div className="flex flex-col h-full">
-                    <div className="flex items-center justify-between p-4 border-b">
+                    <div className="flex items-center justify-between p-4 border-b border-border">
                       <h2 className="text-lg font-semibold">תפריט ניווט</h2>
                     </div>
                     <nav className="flex-1 p-4">
-                      <div className="space-y-2">
-                        {navigationItems.map((item) => {
-                          const Icon = item.icon;
-                          const isActive = location.pathname === item.path;
-                          return (
-                            <Link
-                              key={item.path}
-                              to={item.path}
-                              onClick={() => setIsOpen(false)}
-                              className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
-                                isActive
-                                  ? 'bg-blue-50 text-blue-700 border-r-4 border-blue-700'
-                                  : 'text-gray-700 hover:bg-gray-50'
-                              }`}
-                            >
-                              <Icon className="h-5 w-5 ml-3" />
-                              <span>{item.label}</span>
-                            </Link>
-                          );
-                        })}
-                      </div>
+                      {renderNavItems()}
                     </nav>
                   </div>
                 </SheetContent>
               </Sheet>
-     
-            {/* Hamburger Menu */}
-       
-              <BookOpen className="h-8 w-8 text-blue-200 ml-3" />
-              <h1 className="text-xl font-bold text-white">שלום  {profile?.full_name}</h1>
+              {profile?.full_name && (
+                <span className="text-sm font-medium text-white/90 hidden lg:inline-block">
+                  שלום {profile.full_name}
+                </span>
+              )}
             </div>
-            
-            {/* Hamburger Menu & User Info */}
-            <div className="flex items-center gap-2">
+
+            {/* Center: brand logo */}
+            <div className="justify-self-center">
+              <BrandLogo variant="header" />
+            </div>
+
+            {/* End cluster: bell + sign out */}
+            <div className="flex items-center gap-2 justify-self-end">
               {user && <NotificationBell userId={user.id} />}
               <Button
                 variant="outline"
@@ -212,75 +222,62 @@ const navigationItems = [
                 <LogOut className="h-4 w-4 ml-2" />
                 <span>יציאה</span>
               </Button>
-              
-              
             </div>
           </div>
         </div>
       </header>
 
       {/* Mobile Header */}
-      <header className="md:hidden bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg">
-        <div className="px-4 py-3">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center">
-              <BookOpen className="h-6 w-6 text-blue-200 ml-2" />
-              <h1 className="text-xl font-bold text-white">שלום  {profile?.full_name}</h1>
-            </div>
-            <div className="flex items-center gap-1">
-              {user && <NotificationBell userId={user.id} />}
+      <header className="md:hidden bg-brand-gradient shadow-brand-header">
+        <div className="px-3">
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center h-14 gap-2">
+
+            {/* Start: menu */}
+            <div className="flex items-center justify-self-start">
               <Sheet open={isOpen} onOpenChange={setIsOpen}>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="sm" className="text-white hover:bg-white/10">
-                  <Menu className="h-6 w-6" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="w-80 bg-white">
-                <div className="flex flex-col h-full">
-                  <div className="flex items-center justify-between p-4 border-b">
-                    <h2 className="text-lg font-semibold">תפריט ניווט</h2>
-                  </div>
-                  <nav className="flex-1 p-4">
-                    <div className="space-y-2 mb-6">
-                      {navigationItems.map((item) => {
-                        const Icon = item.icon;
-                        const isActive = location.pathname === item.path;
-                        return (
-                          <Link
-                            key={item.path}
-                            to={item.path}
-                            onClick={() => setIsOpen(false)}
-                            className={`flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
-                              isActive
-                                ? 'bg-blue-50 text-blue-700 border-r-4 border-blue-700'
-                                : 'text-gray-700 hover:bg-gray-50'
-                            }`}
-                          >
-                            <Icon className="h-5 w-5 ml-3" />
-                            <span>{item.label}</span>
-                          </Link>
-                        );
-                      })}
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="sm" className="text-white hover:bg-white/10 px-2">
+                    <Menu className="h-6 w-6" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-80 bg-card">
+                  <div className="flex flex-col h-full">
+                    <div className="flex items-center justify-between p-4 border-b border-border">
+                      <h2 className="text-lg font-semibold">תפריט ניווט</h2>
                     </div>
-                    <div className="border-t pt-4">
-                      <div className="mb-4">
-                        <span className="text-sm text-gray-600">
-                          משתמש: {user?.user_metadata?.full_name || user?.email}
-                        </span>
+                    <nav className="flex-1 p-4">
+                      <div className="mb-6">
+                        {renderNavItems()}
                       </div>
-                      <Button
-                        variant="outline"
-                        onClick={handleSignOut}
-                        className="w-full flex items-center justify-center space-x-2"
-                      >
-                        <LogOut className="h-4 w-4 ml-2" />
-                        <span>יציאה</span>
-                      </Button>
-                    </div>
-                  </nav>
-                </div>
-              </SheetContent>
-            </Sheet>
+                      <div className="border-t border-border pt-4">
+                        <div className="mb-4">
+                          <span className="text-sm text-muted-foreground">
+                            משתמש: {user?.user_metadata?.full_name || user?.email}
+                          </span>
+                        </div>
+                        <Button
+                          variant="outline"
+                          onClick={handleSignOut}
+                          className="w-full flex items-center justify-center space-x-2"
+                        >
+                          <LogOut className="h-4 w-4 ml-2" />
+                          <span>יציאה</span>
+                        </Button>
+                      </div>
+                    </nav>
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
+
+            {/* Center: compact brand logo */}
+            <div className="justify-self-center">
+              <BrandLogo variant="compact" />
+            </div>
+
+            {/* End: bell */}
+            <div className="flex items-center justify-self-end">
+              {user && <NotificationBell userId={user.id} />}
             </div>
           </div>
         </div>

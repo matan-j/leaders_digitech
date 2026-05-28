@@ -1682,6 +1682,7 @@ const CRMInstitution = () => {
   const [showWhatsApp, setShowWhatsApp] = useState(false);
   const [showEmail, setShowEmail] = useState(false);
   const [quoteCreateTrigger, setQuoteCreateTrigger] = useState(0);
+  const [orderCreateTrigger, setOrderCreateTrigger] = useState(0);
 
   const handleCreateQuoteFromTopBar = () => {
     // 1) switch to the quotes tab via URL param (matches existing pattern)
@@ -1690,6 +1691,13 @@ const CRMInstitution = () => {
     setSearchParams(next, { replace: true });
     // 2) bump trigger — InstitutionQuotesTab listens to this and fires its create flow
     setQuoteCreateTrigger((n) => n + 1);
+  };
+
+  const handleCreateOrderFromTopBar = () => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'academic-orders');
+    setSearchParams(next, { replace: true });
+    setOrderCreateTrigger((n) => n + 1);
   };
 
   useEffect(() => {
@@ -1845,6 +1853,7 @@ const CRMInstitution = () => {
             <Btn variant="secondary" sm onClick={() => setShowLogActivity(true)}>📝 תעד שיחה</Btn>
             <Btn sm onClick={() => setShowAddOpportunity(true)}>+ הזדמנות</Btn>
             <Btn variant="ai" sm onClick={handleCreateQuoteFromTopBar}>💰 הצעת מחיר</Btn>
+            <Btn variant="teal" sm onClick={handleCreateOrderFromTopBar}>📅 הזמנה לשנה"ל</Btn>
             <Btn variant="secondary" sm onClick={() => setShowAddContact(true)}>+ קשר</Btn>
             <Btn variant="ghost" sm onClick={() => setShowEdit(true)}>✏️ עריכה</Btn>
           </div>
@@ -1932,6 +1941,7 @@ const CRMInstitution = () => {
                 <InstitutionAcademicOrdersTab
                   institutionId={id}
                   institutionName={institution.name}
+                  createTrigger={orderCreateTrigger}
                 />
               )}
             </TabsContent>

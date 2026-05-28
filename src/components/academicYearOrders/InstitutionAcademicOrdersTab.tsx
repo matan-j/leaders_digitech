@@ -27,6 +27,9 @@ import AcademicYearOrderEditorSheet from './AcademicYearOrderEditorSheet';
 interface InstitutionAcademicOrdersTabProps {
   institutionId: string;
   institutionName: string;
+  // Bump from parent to trigger the create-order flow from outside (e.g. the
+  // institution-card top bar). Mirrors the pattern used by InstitutionQuotesTab.
+  createTrigger?: number;
 }
 
 const statusBadgeVariant = (
@@ -56,6 +59,7 @@ const formatDate = (iso: string | null): string => {
 const InstitutionAcademicOrdersTab: React.FC<InstitutionAcademicOrdersTabProps> = ({
   institutionId,
   institutionName,
+  createTrigger,
 }) => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -94,6 +98,14 @@ const InstitutionAcademicOrdersTab: React.FC<InstitutionAcademicOrdersTabProps> 
     setEditingOrderId(null);
     setEditorOpen(true);
   };
+
+  // Open the editor when the parent bumps createTrigger (top-bar button).
+  // Skip the initial 0 so the editor doesn't auto-open on first mount.
+  useEffect(() => {
+    if (!createTrigger) return;
+    handleCreate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createTrigger]);
 
   const handleEdit = (order: AcademicYearOrder) => {
     if (!canEdit) return;

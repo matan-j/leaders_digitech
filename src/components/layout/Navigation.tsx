@@ -177,7 +177,7 @@ const navigationItems = [
       {/* Desktop Header */}
       <header className="hidden md:block bg-brand-gradient shadow-brand-header">
         <div className="px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center h-16 gap-4">
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center h-20 gap-4">
 
             {/* Start cluster: menu + greeting */}
             <div className="flex items-center gap-2 justify-self-start">
@@ -230,7 +230,7 @@ const navigationItems = [
       {/* Mobile Header */}
       <header className="md:hidden bg-brand-gradient shadow-brand-header">
         <div className="px-3">
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center h-14 gap-2">
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center h-16 gap-2">
 
             {/* Start: menu */}
             <div className="flex items-center justify-self-start">

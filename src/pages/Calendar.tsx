@@ -158,26 +158,26 @@ const Calendar = () => {
 
 
   return (
-    <div className="min-h-screen bg-gray-50 p-0 sm:p-6 ">
+    <div className="min-h-screen bg-background p-0 sm:p-6 ">
       <div className="md:hidden">
         <MobileNavigation />
       </div>
       <div className="mb-4 sm:mb-8 px-3 sm:px-0 py-4 ">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">יומן אישי</h1>
-            <p className="text-sm sm:text-base text-gray-600">צפייה במערכת השעות והשיעורים הקרובים</p>
+            <h1 className="page-title text-2xl sm:text-3xl mb-2">יומן אישי</h1>
+            <p className="page-subtitle text-sm sm:text-base">צפייה במערכת השעות והשיעורים הקרובים</p>
           </div>
-          
+
           <div className="flex items-center space-x-2">
-        
+
             <button
               onClick={() => {
                 console.log('[Calendar] Manual refresh button clicked');
                 setLoadingState('initial');
                 fetchLessonsData(1);
               }}
-              className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors shadow-md flex items-center"
+              className="bg-brand-gradient text-white px-4 py-2 rounded-lg hover:brightness-110 transition-all shadow-brand-md flex items-center disabled:opacity-50"
               disabled={loadingState === 'initial'}
             >
               <CalendarIcon className="h-4 w-4 ml-2" />
@@ -239,7 +239,7 @@ const Calendar = () => {
             <CardHeader className="p-0 sm:p-6">
               <div className="w-full">
                 <div className="hidden sm:flex items-center gap-2 mb-4">
-                  <CalendarIcon className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500" />
+                  <CalendarIcon className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground" />
                   <span className="text-sm sm:text-base">בחר תאריך:</span>
                 </div>
 

@@ -527,35 +527,35 @@ const CourseAssignments = () => {
    // Initial Loading State
    if (loading && paginatedAssignments.length === 0) {
      return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="min-h-screen flex items-center justify-center bg-background">
             <div className="text-center">
                 <Loader2 className="h-16 w-16 mx-auto mb-4 animate-spin text-primary"/>
-                <p className="text-lg text-gray-700 font-medium">טוען הקצאות...</p>
+                <p className="text-lg text-muted-foreground font-medium">טוען הקצאות...</p>
             </div>
         </div>
      );
    }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+    <div className="min-h-screen bg-background">
       {/* Mobile Nav */}
       <div className="md:hidden"><MobileNavigation /></div>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
-            <div><h1 className="text-3xl font-bold text-gray-900 mb-2"> {isInstructor ? "הקורסים שלי" : "הקצאות קורסים"} ({totalCount}) </h1> <p className="text-gray-600 text-lg"> {isInstructor ? "צפייה בקורסים שהוקצו לך" : "ניהול וצפייה בכל הקורסים שהוקצו למדריכים"} </p></div>
+            <div><h1 className="page-title mb-2"> {isInstructor ? "הקורסים שלי" : "הקצאות קורסים"} ({totalCount}) </h1> <p className="page-subtitle text-lg"> {isInstructor ? "צפייה בקורסים שהוקצו לך" : "ניהול וצפייה בכל הקורסים שהוקצו למדריכים"} </p></div>
         </div>
 
         {/* Filters */}
         <div className="mb-6">
-           <Card className="shadow-sm border-0 bg-white/80 backdrop-blur-sm">
+           <Card className="shadow-brand-sm">
              <CardContent className="p-4 space-y-4">
-                 <div className="flex items-center gap-2"><Filter className="h-4 w-4 text-gray-500"/><span className="font-medium text-gray-700">סינון:</span></div>
+                 <div className="flex items-center gap-2"><Filter className="h-4 w-4 text-muted-foreground"/><span className="font-medium text-foreground">סינון:</span></div>
                  <div className={`grid grid-cols-1 md:grid-cols-2 ${hasAdminAccess ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4`}>
                     {/* Instructor */}
                      {hasAdminAccess && ( <div className="flex flex-col gap-1">
-                         <span className="text-xs font-medium text-gray-600">מדריך:</span>
+                         <span className="text-xs font-medium text-muted-foreground">מדריך:</span>
                          <Select value={instructorFilter} onValueChange={handleInstructorFilterChange}>
                             <SelectTrigger><SelectValue placeholder="כל המדריכים" /></SelectTrigger>
                             <SelectContent><SelectItem value="all">כל המדריכים</SelectItem>{instructors.map((inst) => (<SelectItem key={inst.id} value={inst.full_name}>{inst.full_name}</SelectItem>))}</SelectContent>
@@ -563,7 +563,7 @@ const CourseAssignments = () => {
                      </div>)}
                      {/* Institution */}
                      <div className="flex flex-col gap-1">
-                         <span className="text-xs font-medium text-gray-600">מוסד:</span>
+                         <span className="text-xs font-medium text-muted-foreground">מוסד:</span>
                          <Select value={institutionFilter} onValueChange={handleInstitutionFilterChange}>
                             <SelectTrigger><SelectValue placeholder="כל המוסדות" /></SelectTrigger>
                             <SelectContent><SelectItem value="all">כל המוסדות</SelectItem>{institutions.map((inst) => (<SelectItem key={inst.id} value={inst.name}>{inst.name}</SelectItem>))}</SelectContent>
@@ -571,7 +571,7 @@ const CourseAssignments = () => {
                      </div>
                     {/* Course */}
                      <div className="flex flex-col gap-1">
-                         <span className="text-xs font-medium text-gray-600">קורס:</span>
+                         <span className="text-xs font-medium text-muted-foreground">קורס:</span>
                          <Select value={courseFilter} onValueChange={handleCourseFilterChange}>
                             <SelectTrigger><SelectValue placeholder="כל הקורסים" /></SelectTrigger>
                             <SelectContent><SelectItem value="all">כל הקורסים</SelectItem>{courseTemplates.map((course) => (<SelectItem key={course.id} value={course.name}>{course.name}</SelectItem>))}</SelectContent>
@@ -579,7 +579,7 @@ const CourseAssignments = () => {
                      </div>
                      {/* School Type */}
                      <div className="flex flex-col gap-1">
-                        <span className="text-xs font-medium text-gray-600">סוג בי"ס:</span>
+                        <span className="text-xs font-medium text-muted-foreground">סוג בי"ס:</span>
                          <Select value={schoolTypeFilter} onValueChange={handleSchoolTypeFilterChange}>
                              <SelectTrigger><SelectValue placeholder="כל הסוגים" /></SelectTrigger>
                            <SelectContent><SelectItem value="all">כל הסוגים</SelectItem><SelectItem value="elementary">יסודי</SelectItem><SelectItem value="middle">חטיבה</SelectItem><SelectItem value="high">תיכון</SelectItem></SelectContent>
@@ -597,13 +597,13 @@ const CourseAssignments = () => {
 
         {/* Empty State */}
         {!loading && paginatedAssignments.length === 0 && (
-             <Card className="text-center py-16 shadow-lg border-0 bg-white/80 backdrop-blur-sm mt-8">
+             <Card className="text-center py-16 shadow-brand-md mt-8">
                  <CardContent>
-                     <Users className="h-16 w-16 text-gray-400 mx-auto mb-6" />
-                     <h3 className="text-xl font-semibold text-gray-900 mb-3">
+                     <Users className="h-16 w-16 text-muted-foreground mx-auto mb-6" />
+                     <h3 className="text-xl font-semibold text-foreground mb-3">
                          {(instructorFilter || institutionFilter || courseFilter || schoolTypeFilter) ? "לא נמצאו הקצאות התואמות לסינון" : (isInstructor ? "לא הוקצו לך קורסים עדיין" : "לא נמצאו הקצאות קורסים")}
                      </h3>
-                     <p className="text-gray-600 mb-6 text-lg">
+                     <p className="text-muted-foreground mb-6 text-lg">
                           {(instructorFilter || institutionFilter || courseFilter || schoolTypeFilter) ? "נסה לשנות את הסינון או לנקות אותו." : (isInstructor ? "כאשר יוקצו לך קורסים, הם יופיעו כאן." : "ניתן להקצות קורסים דרך עמוד ניהול הקורסים.")}
                      </p>
                  </CardContent>
@@ -613,7 +613,7 @@ const CourseAssignments = () => {
         {/* Assignments List - Map over paginatedAssignments */}
         <div className="space-y-8">
           {paginatedAssignments.map((assignment) => (
-            <Card key={assignment.instance_id} className="shadow-xl border-0 backdrop-blur-sm bg-white/80 transition-shadow duration-300 hover:shadow-2xl overflow-hidden">
+            <Card key={assignment.instance_id} className="shadow-brand-lg transition-shadow duration-300 hover:shadow-brand-lg overflow-hidden">
               <CardHeader className="text-white rounded-t-lg p-4 sm:p-6" style={{ background: getGradient(assignment.color || '#574a7a') }}> {/* Adjusted padding */}
                    <div className="flex justify-between items-start">
                         {/* Left Side: Info */}
@@ -661,17 +661,17 @@ const CourseAssignments = () => {
                      </div>
 
                    {/* Tasks Section */}
-                   <h3 className="text-lg font-semibold text-gray-800 mb-3">שיעורים ומשימות</h3>
+                   <h3 className="section-title mb-3">שיעורים ומשימות</h3>
                    {assignment.tasks && assignment.tasks.length > 0 ? (
                      <div className="space-y-4">
                         {Object.entries(groupTasksByLesson(assignment.tasks))
                             .sort(([a], [b]) => Number(a) - Number(b))
                             .map(([lessonNumber, tasksInLesson]) => (
-                          <div key={lessonNumber} className="bg-gray-50 rounded-lg p-3 sm:p-4 border border-gray-200">
+                          <div key={lessonNumber} className="bg-muted rounded-lg p-3 sm:p-4 border border-border">
                             {/* Lesson Header */}
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3 gap-2">
-                                <h4 className="font-semibold text-gray-800 flex items-center text-base">
-                                    <Calendar className="h-4 w-4 mr-2 text-gray-500"/>שיעור {lessonNumber}: {tasksInLesson[0]?.lesson_title || "ללא כותרת"}
+                                <h4 className="font-semibold text-foreground flex items-center text-base">
+                                    <Calendar className="h-4 w-4 mr-2 text-muted-foreground"/>שיעור {lessonNumber}: {tasksInLesson[0]?.lesson_title || "ללא כותרת"}
                                 </h4>
                                 {/* Render status badge using the status from the first task */}
                                 {renderReportStatus(tasksInLesson[0]?.report_status)}
@@ -713,8 +713,8 @@ const CourseAssignments = () => {
                         ))}
                      </div>
                    ) : (
-                       <div className="text-center py-6 text-gray-500 bg-gray-50 rounded-lg border border-gray-200">
-                           <Circle className="h-8 w-8 text-gray-300 mx-auto mb-2"/>
+                       <div className="text-center py-6 text-muted-foreground bg-muted rounded-lg border border-border">
+                           <Circle className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2"/>
                            <p>לא נמצאו שיעורים או משימות עבור הקצאה זו.</p>
                        </div>
                    )}

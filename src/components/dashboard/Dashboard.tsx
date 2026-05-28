@@ -332,10 +332,10 @@ const menuItems = [
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center space-y-4">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
-          <p className="text-lg text-gray-600">טוען נתונים...</p>
+          <p className="text-lg text-muted-foreground">טוען נתונים...</p>
         </div>
       </div>
     );
@@ -343,7 +343,7 @@ const menuItems = [
 
 
 return (
-  <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 mb-12">
+  <div className="min-h-screen bg-background mb-12">
     <><MobileNavigation/></>
     {isInstructor && !bannerDismissed && unreportedCount > 0 && (
       <div className="bg-amber-50 border-b border-amber-200 px-4 py-3 flex items-center justify-between" dir="rtl">
@@ -362,19 +362,19 @@ return (
       <div className="text-center">
         {user?.user_metadata.role !== "instructor" ? (
           <div>
-            <h2 className="text-xl sm:text-2xl md:text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+            <h2 className="text-xl sm:text-2xl md:text-4xl font-bold bg-brand-gradient bg-clip-text text-transparent mb-2">
               ברוך הבא למערכת ניהול המנחים והמרצים
             </h2>
-            <p className="text-gray-600 text-sm sm:text-base md:text-lg">
+            <p className="text-muted-foreground text-sm sm:text-base md:text-lg">
               ניהול יעיל ומקצועי של המערכת החינוכית
             </p>
           </div>
         ) : (
           <div>
-            <h2 className="text-lg sm:text-xl md:text-3xl font-bold text-gray-900 mb-2">
+            <h2 className="text-lg sm:text-xl md:text-3xl font-bold text-foreground mb-2">
               שלום {user?.user_metadata?.full_name || user?.email}
             </h2>
-            <p className="text-gray-600 text-sm sm:text-base md:text-lg">
+            <p className="text-muted-foreground text-sm sm:text-base md:text-lg">
               ברוכים הבאים לדשבורד המדריכים
             </p>
           </div>
@@ -386,7 +386,7 @@ return (
             onClick={() => window.location.reload()}
             variant="outline"
             size="sm"
-            className="bg-white/80 hover:bg-white shadow-md"
+            className="shadow-brand-sm"
           >
             <Calendar className="h-4 w-4 ml-2" />
             רענן דשבורד
@@ -396,7 +396,7 @@ return (
 
       {/* תגמולים */}
    { user.user_metadata.role==="instructor"&&  <Card 
-        className="bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 border-0 shadow-2xl cursor-pointer hover:scale-[1.02] transition-all duration-300 overflow-hidden relative active:scale-95"
+        className="bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 border-0 shadow-brand-lg cursor-pointer hover:scale-[1.02] transition-all duration-300 overflow-hidden relative active:scale-95"
         onClick={() => nav('/rewards')}
       >
         <div className="absolute top-0 right-0 w-16 sm:w-20 md:w-32 h-16 sm:h-20 md:h-32 bg-white/10 rounded-full -translate-y-8 sm:-translate-y-10 md:-translate-y-16 translate-x-8 sm:translate-x-10 md:translate-x-16"></div>
@@ -440,7 +440,7 @@ return (
      { user.user_metadata.role!=="instructor"&&   
        <div className="col-span-3">
         <Card 
-        className="bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 border-0 shadow-2xl cursor-pointer hover:scale-[1.02] transition-all duration-300 overflow-hidden relative active:scale-95"
+        className="bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 border-0 shadow-brand-lg cursor-pointer hover:scale-[1.02] transition-all duration-300 overflow-hidden relative active:scale-95"
         onClick={() => nav('/rewards')}
       >
         <div className="absolute top-0 right-0 w-16 sm:w-20 md:w-32 h-16 sm:h-20 md:h-32 bg-white/10 rounded-full -translate-y-8 sm:-translate-y-10 md:-translate-y-16 translate-x-8 sm:translate-x-10 md:translate-x-16"></div>
@@ -514,7 +514,7 @@ return (
     {/* Main Dashboard Grid */}
 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
   {/* ביצועים השבוע Card */}
-  <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white border-0 shadow-xl">
+  <Card className="bg-brand-gradient text-white border-0 shadow-brand-lg">
     <CardHeader className="p-3 md:p-6">
       <CardTitle className="flex items-center text-white text-sm md:text-lg">
         <TrendingUp className="h-4 w-4 md:h-5 md:w-5 mr-2" />
@@ -542,7 +542,7 @@ return (
   </Card>
 
   {/* יעדים חודשיים Card */}
-  <Card className="bg-gradient-to-br from-green-500 to-teal-600 text-white border-0 shadow-xl">
+  <Card className="bg-gradient-to-br from-green-500 to-teal-600 text-white border-0 shadow-brand-lg">
     <CardHeader className="p-3 md:p-6">
       <CardTitle className="flex items-center text-white text-sm md:text-lg">
         <Target className="h-4 w-4 md:h-5 md:w-5 mr-2" />
@@ -576,21 +576,21 @@ return (
         {menuItems.map((item, index) => (
           <Card
             key={index}
-            className="hover:shadow-xl transition-all duration-300 cursor-pointer border-0 bg-white/80 backdrop-blur-sm hover:scale-105 group"
+            className="hover:shadow-brand-lg transition-all duration-300 cursor-pointer hover:scale-105 group"
             onClick={() => nav(item.path)}
           >
             <CardHeader className="pb-3 md:pb-4 p-3 md:p-6">
               <div className="flex items-center">
-                <div className={`p-2 sm:p-3 bg-gradient-to-r ${item.gradient} rounded-lg mr-3 sm:mr-4 group-hover:scale-110 transition-transform duration-200 shadow-lg`}>
+                <div className={`p-2 sm:p-3 bg-gradient-to-r ${item.gradient} rounded-lg mr-3 sm:mr-4 group-hover:scale-110 transition-transform duration-200 shadow-brand-md`}>
                   <item.icon className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                 </div>
-                <CardTitle className="text-sm sm:text-base md:text-lg text-gray-900 group-hover:text-blue-600 transition-colors font-semibold">
+                <CardTitle className="text-sm sm:text-base md:text-lg text-foreground group-hover:text-primary transition-colors font-semibold">
                   {item.title}
                 </CardTitle>
               </div>
             </CardHeader>
             <CardContent className="p-3 md:p-6 pt-0">
-              <CardDescription className="text-xs sm:text-sm text-gray-600 leading-relaxed">
+              <CardDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
                 {item.description}
               </CardDescription>
             </CardContent>

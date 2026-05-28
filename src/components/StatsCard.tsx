@@ -11,7 +11,7 @@ interface StatsCardProps {
 
 export const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon: Icon, color }) => {
   return (
-    <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
+    <Card className="border-0 shadow-brand-md hover:shadow-brand-lg transition-all duration-300 hover:scale-105">
       <CardContent className="p-0">
         <div className={`${color} p-6 text-white rounded-lg`}>
           <div className="flex items-center justify-between">

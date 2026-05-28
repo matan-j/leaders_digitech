@@ -2,11 +2,11 @@ import type { ProjectType, TaskStatus, TaskType } from './types';
 
 export const C = {
   surface: '#FFFFFF',
-  bg: '#F8F9FB',
-  border: '#E4E7ED',
+  bg: '#F7F8FC',
+  border: '#E5E7EB',
   text: '#111827',
   textSub: '#6B7280',
-  accent: '#3B5BDB',
+  accent: '#6D28D9',
   green: '#10B981',
   blue: '#3B5BDB',
   orange: '#F59E0B',

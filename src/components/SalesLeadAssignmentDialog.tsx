@@ -691,8 +691,8 @@ const onSelectContact = (index: number) => {
               </Button>
               <Button
                 type="submit"
+                variant="brand"
                 disabled={isSubmitting}
-                className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800"
               >
                 {isSubmitting ? (
                   <>

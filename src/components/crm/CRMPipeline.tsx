@@ -64,7 +64,7 @@ function KpiStrip({ kpis }: { kpis: KPIs }) {
   return (
     <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
       {items.map((k) => (
-        <div key={k.label} style={{ flex: '1 1 160px', background: '#fff', border: '1px solid #E4E7ED', borderRadius: 10, padding: '14px 18px' }}>
+        <div key={k.label} style={{ flex: '1 1 160px', background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, padding: '14px 18px' }}>
           <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 4 }}>{k.label}</div>
           <div style={{ fontSize: 20, fontWeight: 700, color: '#111827' }}>{k.value}</div>
         </div>
@@ -83,7 +83,7 @@ function InstitutionCard({ inst, stageColor, onDragStart }: { inst: InstitutionR
     <div
       draggable
       onDragStart={() => onDragStart(inst.id)}
-      style={{ background: '#fff', border: '1px solid #E4E7ED', borderTop: `3px solid ${stageColor}`, borderRadius: 8, padding: '12px 14px', cursor: 'grab', userSelect: 'none' }}
+      style={{ background: '#fff', border: '1px solid #E5E7EB', borderTop: `3px solid ${stageColor}`, borderRadius: 8, padding: '12px 14px', cursor: 'grab', userSelect: 'none' }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
         <div style={{ fontWeight: 600, fontSize: 13, color: '#111827', lineHeight: 1.3 }}>{inst.name}</div>
@@ -143,7 +143,7 @@ function KanbanColumn({ stage, rows, onDragStart, onDrop }: {
           {rows.length}
         </span>
       </div>
-      <div style={{ flex: 1, minHeight: 100, display: 'flex', flexDirection: 'column', gap: 8, background: over ? '#F0F4FF' : 'transparent', borderRadius: 8, border: over ? '2px dashed #3B5BDB' : '2px dashed transparent', padding: over ? 6 : 0, transition: 'all 0.15s' }}>
+      <div style={{ flex: 1, minHeight: 100, display: 'flex', flexDirection: 'column', gap: 8, background: over ? '#F3E8FF' : 'transparent', borderRadius: 8, border: over ? '2px dashed #6D28D9' : '2px dashed transparent', padding: over ? 6 : 0, transition: 'all 0.15s' }}>
         {rows.map((inst) => (
           <InstitutionCard key={inst.id} inst={inst} stageColor={color} onDragStart={onDragStart} />
         ))}
@@ -266,12 +266,12 @@ function EditStagesModal({ stages, onClose, onSaved }: { stages: PipelineStage[]
     onClose();
   };
 
-  const inputStyle: React.CSSProperties = { padding: '5px 8px', border: '1px solid #E4E7ED', borderRadius: 5, fontSize: 13, color: '#111827', outline: 'none', width: '100%' };
+  const inputStyle: React.CSSProperties = { padding: '5px 8px', border: '1px solid #E5E7EB', borderRadius: 5, fontSize: 13, color: '#111827', outline: 'none', width: '100%' };
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 400, background: 'rgba(15,17,23,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: '#fff', borderRadius: 12, width: 520, maxWidth: '95vw', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.22)', maxHeight: '85vh' }} dir="rtl">
-        <div style={{ padding: '15px 20px', borderBottom: '1px solid #E4E7ED', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+        <div style={{ padding: '15px 20px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>⚙️ עריכת שלבי פייפליין</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 18, color: '#6B7280', cursor: 'pointer' }}>✕</button>
         </div>
@@ -279,7 +279,7 @@ function EditStagesModal({ stages, onClose, onSaved }: { stages: PipelineStage[]
         <div style={{ overflowY: 'auto', padding: '16px 20px', flex: 1 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {local.map((stage, idx) => (
-              <div key={stage.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid #E4E7ED', borderRadius: 8, background: '#F8F9FB' }}>
+              <div key={stage.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid #E5E7EB', borderRadius: 8, background: '#F8F9FB' }}>
                 <input
                   type="color"
                   value={stage.color}
@@ -308,17 +308,17 @@ function EditStagesModal({ stages, onClose, onSaved }: { stages: PipelineStage[]
               </div>
             ))}
           </div>
-          <button onClick={addStage} style={{ marginTop: 10, width: '100%', padding: '8px', border: '1px dashed #E4E7ED', borderRadius: 8, background: '#F8F9FB', color: '#6B7280', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
+          <button onClick={addStage} style={{ marginTop: 10, width: '100%', padding: '8px', border: '1px dashed #E5E7EB', borderRadius: 8, background: '#F8F9FB', color: '#6B7280', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
             + הוסף שלב
           </button>
           {error && <div style={{ marginTop: 10, padding: '8px 12px', background: '#FEE2E2', borderRadius: 6, fontSize: 12, color: '#DC2626' }}>{error}</div>}
         </div>
 
-        <div style={{ padding: '13px 20px', borderTop: '1px solid #E4E7ED', display: 'flex', gap: 8, flexShrink: 0 }}>
-          <button onClick={save} disabled={saving} style={{ flex: 1, padding: '8px', borderRadius: 6, border: 'none', background: saving ? '#9CA3AF' : '#3B5BDB', color: '#fff', fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer' }}>
+        <div style={{ padding: '13px 20px', borderTop: '1px solid #E5E7EB', display: 'flex', gap: 8, flexShrink: 0 }}>
+          <button onClick={save} disabled={saving} style={{ flex: 1, padding: '8px', borderRadius: 6, border: 'none', background: saving ? '#9CA3AF' : '#6D28D9', color: '#fff', fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer' }}>
             {saving ? 'שומר...' : 'שמור שינויים'}
           </button>
-          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid #E4E7ED', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid #E5E7EB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             ביטול
           </button>
         </div>
@@ -381,12 +381,12 @@ function EditRuleModal({ rule, templates, stageNames, onClose, onSaved, currentU
     onSaved(); onClose();
   };
 
-  const inputStyle: React.CSSProperties = { width: '100%', padding: '7px 10px', border: '1px solid #E4E7ED', borderRadius: 6, fontSize: 13, color: '#111827', background: '#fff', outline: 'none' };
+  const inputStyle: React.CSSProperties = { width: '100%', padding: '7px 10px', border: '1px solid #E5E7EB', borderRadius: 6, fontSize: 13, color: '#111827', background: '#fff', outline: 'none' };
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(15,17,23,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: '#fff', borderRadius: 12, width: 480, maxWidth: '95vw', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.22)' }} dir="rtl">
-        <div style={{ padding: '15px 20px', borderBottom: '1px solid #E4E7ED', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '15px 20px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>{isNew ? '+ חוק אוטומציה חדש' : '✏️ עריכת חוק'}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 18, color: '#6B7280', cursor: 'pointer' }}>✕</button>
         </div>
@@ -405,7 +405,7 @@ function EditRuleModal({ rule, templates, stageNames, onClose, onSaved, currentU
             <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 5 }}>ערוץ</label>
             <div style={{ display: 'flex', gap: 8 }}>
               {(['whatsapp', 'email'] as Channel[]).map((ch) => (
-                <button key={ch} onClick={() => { set('channel', ch); set('template_id', ''); }} style={{ flex: 1, padding: '8px', borderRadius: 6, border: `1px solid ${form.channel === ch ? '#3B5BDB' : '#E4E7ED'}`, background: form.channel === ch ? '#EEF2FF' : '#fff', color: form.channel === ch ? '#3B5BDB' : '#6B7280', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                <button key={ch} onClick={() => { set('channel', ch); set('template_id', ''); }} style={{ flex: 1, padding: '8px', borderRadius: 6, border: `1px solid ${form.channel === ch ? '#6D28D9' : '#E5E7EB'}`, background: form.channel === ch ? '#F3E8FF' : '#fff', color: form.channel === ch ? '#6D28D9' : '#6B7280', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                   {ch === 'whatsapp' ? '📱 וואטסאפ' : '📧 מייל'}
                 </button>
               ))}
@@ -424,12 +424,12 @@ function EditRuleModal({ rule, templates, stageNames, onClose, onSaved, currentU
               {DELAY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
-          {form.template_id && <div style={{ padding: '10px 13px', background: '#F0F4FF', border: '1px solid #C7D2FE', borderRadius: 8, fontSize: 12, color: '#3730A3', lineHeight: 1.6 }}>🔍 {previewText()}</div>}
+          {form.template_id && <div style={{ padding: '10px 13px', background: '#F3E8FF', border: '1px solid #DDD6FE', borderRadius: 8, fontSize: 12, color: '#2B145F', lineHeight: 1.6 }}>🔍 {previewText()}</div>}
           {error && <div style={{ padding: '8px 12px', background: '#FEE2E2', border: '1px solid #FCA5A5', borderRadius: 6, fontSize: 12, color: '#DC2626' }}>{error}</div>}
         </div>
-        <div style={{ padding: '13px 20px', borderTop: '1px solid #E4E7ED', display: 'flex', gap: 8 }}>
-          <button onClick={handleSave} disabled={saving} style={{ flex: 1, padding: '8px', borderRadius: 6, border: 'none', background: saving ? '#9CA3AF' : '#3B5BDB', color: '#fff', fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer' }}>{saving ? 'שומר...' : 'שמור'}</button>
-          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid #E4E7ED', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>ביטול</button>
+        <div style={{ padding: '13px 20px', borderTop: '1px solid #E5E7EB', display: 'flex', gap: 8 }}>
+          <button onClick={handleSave} disabled={saving} style={{ flex: 1, padding: '8px', borderRadius: 6, border: 'none', background: saving ? '#9CA3AF' : '#6D28D9', color: '#fff', fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer' }}>{saving ? 'שומר...' : 'שמור'}</button>
+          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid #E5E7EB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>ביטול</button>
         </div>
       </div>
     </div>
@@ -469,7 +469,7 @@ function AutomationRulesSection({ currentUserId, stageNames }: { currentUserId: 
   return (
     <>
       {showModal && <EditRuleModal rule={editRule} templates={templates} stageNames={stageNames} onClose={() => setShowModal(false)} onSaved={loadRules} currentUserId={currentUserId} />}
-      <div style={{ background: '#fff', border: '1px solid #E4E7ED', borderRadius: 10, marginBottom: 20, overflow: 'hidden' }}>
+      <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, marginBottom: 20, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', cursor: 'pointer', userSelect: 'none' }} onClick={() => setExpanded((v) => !v)}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 14 }}>⚙️</span>
@@ -477,7 +477,7 @@ function AutomationRulesSection({ currentUserId, stageNames }: { currentUserId: 
             {activeCount > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#DCFCE7', color: '#16A34A' }}>{activeCount} פעילים</span>}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button onClick={(e) => { e.stopPropagation(); setEditRule(null); setShowModal(true); }} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 5, border: '1px solid #3B5BDB', background: '#EEF2FF', color: '#3B5BDB', fontWeight: 600, cursor: 'pointer' }}>+ הוסף</button>
+            <button onClick={(e) => { e.stopPropagation(); setEditRule(null); setShowModal(true); }} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 5, border: '1px solid #6D28D9', background: '#F3E8FF', color: '#6D28D9', fontWeight: 600, cursor: 'pointer' }}>+ הוסף</button>
             <span style={{ fontSize: 12, color: '#6B7280' }}>{expanded ? 'הסתר ▲' : 'הצג ▼'}</span>
           </div>
         </div>
@@ -492,7 +492,7 @@ function AutomationRulesSection({ currentUserId, stageNames }: { currentUserId: 
                 <thead>
                   <tr style={{ background: '#F8F9FB' }}>
                     {['ערוץ', 'טריגר', 'פעולה', 'שם תבנית', 'עיכוב', 'פעיל', ''].map((h) => (
-                      <th key={h} style={{ padding: '8px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E4E7ED', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} style={{ padding: '8px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -505,12 +505,12 @@ function AutomationRulesSection({ currentUserId, stageNames }: { currentUserId: 
                       <td style={{ padding: '10px 12px', fontSize: 12, color: '#374151' }}>{rule.template?.name ?? <span style={{ color: '#9CA3AF' }}>—</span>}</td>
                       <td style={{ padding: '10px 12px', fontSize: 12, color: '#6B7280' }}>{getDelayLabel(rule.delay_minutes)}</td>
                       <td style={{ padding: '10px 12px' }}>
-                        <button onClick={() => toggleActive(rule)} style={{ width: 38, height: 20, borderRadius: 10, border: 'none', cursor: 'pointer', position: 'relative', background: rule.is_active ? '#3B5BDB' : '#D1D5DB', transition: 'background 0.2s' }}>
+                        <button onClick={() => toggleActive(rule)} style={{ width: 38, height: 20, borderRadius: 10, border: 'none', cursor: 'pointer', position: 'relative', background: rule.is_active ? '#6D28D9' : '#D1D5DB', transition: 'background 0.2s' }}>
                           <span style={{ position: 'absolute', top: 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'right 0.2s, left 0.2s', ...(rule.is_active ? { right: 2 } : { left: 2 }) }} />
                         </button>
                       </td>
                       <td style={{ padding: '10px 12px' }}>
-                        <button onClick={() => { setEditRule(rule); setShowModal(true); }} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 5, border: '1px solid #E4E7ED', background: '#fff', color: '#374151', cursor: 'pointer' }}>✏️ עריכה</button>
+                        <button onClick={() => { setEditRule(rule); setShowModal(true); }} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 5, border: '1px solid #E5E7EB', background: '#fff', color: '#374151', cursor: 'pointer' }}>✏️ עריכה</button>
                       </td>
                     </tr>
                   ))}
@@ -646,19 +646,19 @@ export default function CRMPipeline() {
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select value={filterInstructor} onChange={(e) => setFilterInstructor(e.target.value)} style={{ padding: '7px 12px', border: '1px solid #E4E7ED', borderRadius: 6, fontSize: 13, background: '#fff', color: '#374151' }}>
+        <select value={filterInstructor} onChange={(e) => setFilterInstructor(e.target.value)} style={{ padding: '7px 12px', border: '1px solid #E5E7EB', borderRadius: 6, fontSize: 13, background: '#fff', color: '#374151' }}>
           <option value="">כל המדריכים</option>
           {instructors.map((i) => <option key={i.id} value={i.id}>{i.full_name}</option>)}
         </select>
-        <select value={filterCity} onChange={(e) => setFilterCity(e.target.value)} style={{ padding: '7px 12px', border: '1px solid #E4E7ED', borderRadius: 6, fontSize: 13, background: '#fff', color: '#374151' }}>
+        <select value={filterCity} onChange={(e) => setFilterCity(e.target.value)} style={{ padding: '7px 12px', border: '1px solid #E5E7EB', borderRadius: 6, fontSize: 13, background: '#fff', color: '#374151' }}>
           <option value="">כל הערים</option>
           {cities.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         {(filterInstructor || filterCity) && (
-          <button onClick={() => { setFilterInstructor(''); setFilterCity(''); }} style={{ padding: '7px 14px', border: '1px solid #E4E7ED', borderRadius: 6, fontSize: 13, background: '#fff', color: '#6B7280', cursor: 'pointer' }}>ניקוי</button>
+          <button onClick={() => { setFilterInstructor(''); setFilterCity(''); }} style={{ padding: '7px 14px', border: '1px solid #E5E7EB', borderRadius: 6, fontSize: 13, background: '#fff', color: '#6B7280', cursor: 'pointer' }}>ניקוי</button>
         )}
         <div style={{ flex: 1 }} />
-        <button onClick={() => setShowEditStages(true)} style={{ padding: '7px 14px', border: '1px solid #E4E7ED', borderRadius: 6, fontSize: 13, background: '#fff', color: '#374151', cursor: 'pointer', fontWeight: 600 }}>
+        <button onClick={() => setShowEditStages(true)} style={{ padding: '7px 14px', border: '1px solid #E5E7EB', borderRadius: 6, fontSize: 13, background: '#fff', color: '#374151', cursor: 'pointer', fontWeight: 600 }}>
           ⚙️ ערוך שלבים
         </button>
       </div>

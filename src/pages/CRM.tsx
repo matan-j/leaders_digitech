@@ -28,8 +28,8 @@ const TAB_FROM_LABEL: Record<string, CRMTab> = {
 
 const C = {
   surface: '#FFFFFF',
-  border: '#E4E7ED',
-  accent: '#3B5BDB',
+  border: '#E5E7EB',
+  accent: '#6D28D9',
   textSub: '#6B7280',
 };
 
@@ -71,7 +71,7 @@ const CRM = () => {
   };
 
   return (
-    <div dir="rtl" className="min-h-screen" style={{ background: '#F8F9FB' }}>
+    <div dir="rtl" className="min-h-screen" style={{ background: '#F7F8FC' }}>
       {/* Sub-nav */}
       <div
         style={{

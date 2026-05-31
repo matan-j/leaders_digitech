@@ -10,7 +10,7 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "rounded-lg border bg-card text-card-foreground shadow-sm",
+      "relative rounded-lg border bg-card text-card-foreground shadow-brand-md",
       className
     )}
     {...props}
@@ -77,4 +77,21 @@ const CardFooter = React.forwardRef<
 ))
 CardFooter.displayName = "CardFooter"
 
-export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent }
+// Opt-in vertical accent stripe along the start (RTL: right) edge of a Card.
+// Place as the first child inside a <Card>. Parent already has `relative`.
+type AccentTone = 'purple' | 'blue' | 'green';
+const CardAccent = ({ tone = 'purple', className }: { tone?: AccentTone; className?: string }) => (
+  <div
+    aria-hidden
+    className={cn(
+      "absolute inset-y-0 start-0 w-1 rounded-s-lg",
+      tone === 'purple' && 'bg-brand-purple',
+      tone === 'blue'   && 'bg-brand-blue',
+      tone === 'green'  && 'bg-brand-green',
+      className
+    )}
+  />
+)
+CardAccent.displayName = "CardAccent"
+
+export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent, CardAccent }

@@ -297,7 +297,7 @@ const Courses = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
       </div>
     );
@@ -307,7 +307,7 @@ const Courses = () => {
   const isInstructor = user.user_metadata.role === "instructor";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 md:mb-0 mb-12">
+    <div className="min-h-screen bg-background md:mb-0 mb-12">
       <div className="md:hidden">
         <MobileNavigation />
       </div>
@@ -318,16 +318,16 @@ const Courses = () => {
           <div>
             {user.user_metadata.role !== "instructor" ? (
               <>
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                <h1 className="page-title mb-2">
                   ניהול קורסים
                 </h1>
-                <p className="text-gray-600 text-lg">
+                <p className="page-subtitle text-lg">
                   ניהול וצפייה בכל הקורסים שאתה מעביר
                 </p>
               </>
             ) : (
               <>
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                <h1 className="page-title mb-2">
                   {" "}
                   הקורסים שלי
                 </h1>
@@ -336,8 +336,9 @@ const Courses = () => {
           </div>
           {!isInstructor && (
             <Button
+              variant="brand"
               onClick={() => setShowCreateDialog(true)}
-              className="flex items-center space-x-2 space-x-reverse bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg"
+              className="flex items-center space-x-2 space-x-reverse"
             >
               <Plus className="h-4 w-4" />
               <span>תוכנית לימוד חדשה</span>
@@ -347,15 +348,15 @@ const Courses = () => {
 
         {/* Filters */}
         <div className="mb-6">
-          <Card className="shadow-sm border-0 bg-white/80 backdrop-blur-sm">
+          <Card className="shadow-brand-sm">
             <CardContent className="p-4">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
-                  <Filter className="h-4 w-4 text-gray-500" />
-                  <span className="font-medium text-gray-700">סינון:</span>
+                  <Filter className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium text-foreground">סינון:</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">סוג בית ספר:</span>
+                  <span className="text-sm text-muted-foreground">סוג בית ספר:</span>
                   <Select
                     value={schoolTypeFilter}
                     onValueChange={setSchoolTypeFilter}
@@ -376,7 +377,7 @@ const Courses = () => {
                     variant="outline"
                     size="sm"
                     onClick={() => setSchoolTypeFilter("all")}
-                    className="text-gray-600"
+                    className="text-muted-foreground"
                   >
                     נקה סינון
                   </Button>
@@ -387,22 +388,22 @@ const Courses = () => {
         </div>
 
         {filteredCourses.length === 0 ? (
-          <Card className="text-center py-16 shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+          <Card className="text-center py-16 shadow-brand-md">
             <CardContent>
-              <BookOpen className="h-16 w-16 text-gray-400 mx-auto mb-6" />
-              <h3 className="text-xl font-semibold text-gray-900 mb-3">
+              <BookOpen className="h-16 w-16 text-muted-foreground mx-auto mb-6" />
+              <h3 className="text-xl font-semibold text-foreground mb-3">
                 {schoolTypeFilter && schoolTypeFilter !== "all"
                   ? "לא נמצאו תוכניות לימוד מהסוג הנבחר"
                   : "אין תוכניות לימוד עדיין"}
               </h3>
-              <p className="text-gray-600 mb-6 text-lg">
+              <p className="text-muted-foreground mb-6 text-lg">
                 {schoolTypeFilter && schoolTypeFilter !== "all"
                   ? "נסה לשנות את הסינון או לצור תוכנית לימוד חדשה"
                   : "התחל ליצור את תוכנית הלימוד הראשונה שלך"}
               </p>
               <Button
+                variant="brand"
                 onClick={() => setShowCreateDialog(true)}
-                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg"
               >
                 <Plus className="h-4 w-4 mr-2" />
                 צור תוכנית לימוד חדשה
@@ -415,9 +416,9 @@ const Courses = () => {
               {filteredCourses.map((course) => (
                 <Card
                   key={course.instance_id || course.id}
-                    className={`shadow-xl border-0 backdrop-blur-sm ${
+                    className={`shadow-brand-lg overflow-hidden ${
                       course.is_assigned
-                        ? "bg-white/80"
+                        ? ""
                         : "bg-yellow-50/80 border-2 border-yellow-200"
                     }`}
                   >
@@ -667,10 +668,10 @@ const Courses = () => {
                         {/* Course Details */}
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                           <div className="flex items-center justify-evenly">
-                            <span className="text-sm text-gray-600 font-medium">
+                            <span className="text-sm text-muted-foreground font-medium">
                               סוג בית ספר:
                             </span>
-                            <span className="text-sm font-bold text-blue-600">
+                            <span className="text-sm font-bold text-primary">
                               {getSchoolTypeDisplayName(course.school_type)}
                             </span>
                           </div>
@@ -725,8 +726,8 @@ const Courses = () => {
 
                         {/* Tasks Section */}
                         <div>
-                          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                            <CheckCircle2 className="h-5 w-5 mr-2 text-blue-600" />
+                          <h3 className="section-title mb-4 flex items-center">
+                            <CheckCircle2 className="h-5 w-5 mr-2 text-primary" />
                             משימות הקורס ({course.tasks.length})
                           </h3>
 
@@ -734,7 +735,7 @@ const Courses = () => {
                             <div className="border rounded-lg overflow-hidden">
                               <Table>
                                 <TableHeader>
-                                  <TableRow className="bg-gray-50">
+                                  <TableRow className="bg-muted">
                                     <TableHead className="text-right font-semibold">
                                       שם השיעור
                                     </TableHead>
@@ -762,10 +763,10 @@ const Courses = () => {
                                     .map(([lessonNumber, lessonTasks]) => (
                                       <React.Fragment key={lessonNumber}>
                                         {/* כותרת שיעור */}
-                                        <TableRow className="bg-blue-100">
+                                        <TableRow className="bg-accent">
                                           <TableCell
                                             colSpan={course.is_assigned ? 6 : 5}
-                                            className="font-bold text-right text-blue-900"
+                                            className="font-bold text-right text-accent-foreground"
                                           >
                                             <div className="flex items-center justify-between">
                                               <span>
@@ -776,7 +777,7 @@ const Courses = () => {
                                               {course.is_assigned &&
                                                 lessonTasks[0]
                                                   ?.scheduled_start && (
-                                                  <div className="flex items-center text-sm text-blue-700 px-7">
+                                                  <div className="flex items-center text-sm text-accent-foreground px-7">
                                                     {`${
                                                       formatDateTime(
                                                         lessonTasks[0]
@@ -807,19 +808,19 @@ const Courses = () => {
                                         {lessonTasks.map((task) => (
                                           <TableRow
                                             key={task.id}
-                                            className="hover:bg-gray-50"
+                                            className="hover:bg-muted"
                                           >
                                             <TableCell className="font-medium">
                                               <div className="flex items-center">
-                                                <Circle className="h-4 w-4 text-gray-400 mr-2" />
+                                                <Circle className="h-4 w-4 text-muted-foreground mr-2" />
                                                 {task.title}
                                               </div>
                                             </TableCell>
-                                            <TableCell className="text-gray-600 max-w-xs truncate">
+                                            <TableCell className="text-muted-foreground max-w-xs truncate">
                                               {task.description || "ללא תיאור"}
                                             </TableCell>
                                             <TableCell>
-                                              <div className="flex items-center text-sm text-gray-600">
+                                              <div className="flex items-center text-sm text-muted-foreground">
                                                 <Clock className="h-3 w-3 mr-1" />
                                                 {task.estimated_duration} דק׳
                                               </div>
@@ -850,8 +851,8 @@ const Courses = () => {
                               </Table>
                             </div>
                           ) : (
-                            <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
-                              <Circle className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                            <div className="text-center py-8 text-muted-foreground bg-muted rounded-lg">
+                              <Circle className="h-12 w-12 text-muted-foreground/40 mx-auto mb-3" />
                               <p>אין משימות עבור הקורס הזה</p>
                               <p className="text-sm">
                                 ניתן להוסיף משימות בעת עריכת הקורס
@@ -864,7 +865,8 @@ const Courses = () => {
                         <div className="pt-6 space-y-3">
                           {user.user_metadata.role !== "instructor" && (
                             <Button
-                              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
+                              variant="brand"
+                              className="w-full"
                               size="sm"
                               onClick={() => handleEditCourse(course)}
                             >

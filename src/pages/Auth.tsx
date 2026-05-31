@@ -262,7 +262,8 @@ const Auth = () => {
 
               <Button
                 type="submit"
-                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700"
+                variant="brand"
+                className="w-full"
                 disabled={loading}
               >
                 {loading ? 'מעבד...' : (isForgotPassword ? 'שלח קישור לאיפוס' : (isLogin ? 'התחבר' : 'הירשם'))}

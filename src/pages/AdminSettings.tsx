@@ -1175,7 +1175,7 @@ const getRoleBadge = (role: string) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+    <div className="min-h-screen bg-background">
       <div className="md:hidden">
         <MobileNavigation />
       </div>
@@ -1274,10 +1274,10 @@ const getRoleBadge = (role: string) => {
                 </div>
                 
                 <div className="flex justify-end">
-                  <Button 
-                    onClick={updateDefaults} 
+                  <Button
+                    variant="brand"
+                    onClick={updateDefaults}
                     disabled={savingDefaults}
-                    className="bg-blue-600 hover:bg-blue-700"
                   >
                     {savingDefaults ? (
                       <Loader2 className="h-4 w-4 ml-2 animate-spin" />
@@ -1479,7 +1479,7 @@ const getRoleBadge = (role: string) => {
             <CardTitle>ניהול משתמשי מערכת</CardTitle>
             <CardDescription>אדמינים ומנהלים פדגוגיים - ניתן ליצור רק על ידי מנהל מערכת</CardDescription>
           </div>
-          <Button onClick={() => openSystemUserModal()} className="bg-purple-600 hover:bg-purple-700">
+          <Button variant="brand" onClick={() => openSystemUserModal()}>
             <Plus className="h-4 w-4 ml-2" />
             הוסף משתמש מערכת
           </Button>

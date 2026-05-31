@@ -319,7 +319,7 @@ const pendingClosures = filteredSalesLeads.filter(
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-orange-50 overflow-x-hidden mb-12">
+    <div className="min-h-screen bg-background overflow-x-hidden mb-12">
       <div className="md:hidden">
         <MobileNavigation />
       </div>
@@ -328,16 +328,16 @@ const pendingClosures = filteredSalesLeads.filter(
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
             <Trophy className="h-8 w-8 text-yellow-600 ml-3" />
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+            <h1 className="text-4xl font-bold bg-brand-gradient bg-clip-text text-transparent">
               תגמולים ומכירות
             </h1>
           </div>
-          <p className="text-xl text-gray-700 my-2 text-center">
-            שלום {user.user_metadata.full_name}! אתה בדרך לסגור את החודש הגדול שלך 
+          <p className="text-xl text-foreground my-2 text-center">
+            שלום {user.user_metadata.full_name}! אתה בדרך לסגור את החודש הגדול שלך
             <Flame className="h-6 w-6 text-orange-500 inline mx-2" />
           </p>
-          <div className="bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg p-4 inline-block">
-            <p className="text-lg font-semibold text-purple-800 flex items-center justify-center">
+          <div className="bg-accent rounded-lg p-4 inline-block">
+            <p className="text-lg font-semibold text-accent-foreground flex items-center justify-center">
               <Crown className="h-5 w-5 ml-2 text-yellow-600" />
     אתה {pendingClosures.length} סגירות בלבד ממדריך החודש!
             </p>
@@ -347,20 +347,22 @@ const pendingClosures = filteredSalesLeads.filter(
         {/* Pipeline Section */}
         <div className="mb-8">
           <div className="flex flex-wrap justify-between items-center gap-2 mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-              <Target className="h-6 w-6 ml-2 text-blue-600" />
+            <h2 className="section-title text-2xl flex items-center">
+              <Target className="h-6 w-6 ml-2 text-primary" />
               פייפליין – התקדמות מול מוסדות
             </h2>
-          {user.user_metadata.role!=="instructor"?(  <Button 
-              className="flex items-center space-x-2 space-x-reverse bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 shadow-lg"
+          {user.user_metadata.role!=="instructor"?(  <Button
+              variant="brand"
+              className="flex items-center space-x-2 space-x-reverse"
               onClick={() => setIsAssignmentDialogOpen(true)}
             >
               <Plus className="h-4 w-4" />
               <span>הקצה ליד למדריך</span>
             </Button>)
             :
-            (<Button 
-              className="flex items-center space-x-2 space-x-reverse bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 shadow-lg"
+            (<Button
+              variant="brand"
+              className="flex items-center space-x-2 space-x-reverse"
               onClick={() => setIsAssignmentDialogOpen(true)}
             >
               <Plus className="h-4 w-4" />
@@ -538,21 +540,21 @@ const pendingClosures = filteredSalesLeads.filter(
 
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-              <span className="mr-2 text-gray-600">טוען לידים...</span>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <span className="mr-2 text-muted-foreground">טוען לידים...</span>
             </div>
           ) : filteredSalesLeads.length === 0 ? (
-            <Card className="text-center py-16 shadow-lg border-0 bg-white/90 backdrop-blur-sm">
+            <Card className="text-center py-16 shadow-brand-md">
               <CardContent>
-                <Target className="h-16 w-16 text-gray-400 mx-auto mb-6" />
-                <h3 className="text-xl font-semibold text-gray-900 mb-3">
+                <Target className="h-16 w-16 text-muted-foreground mx-auto mb-6" />
+                <h3 className="text-xl font-semibold text-foreground mb-3">
                   {salesLeads.length === 0 ? 'אין לידים במערכת' : 'אין לידים בטווח התאריכים שנבחר'}
                 </h3>
-                <p className="text-gray-600 mb-6 text-lg">
+                <p className="text-muted-foreground mb-6 text-lg">
                   {salesLeads.length === 0 ? 'התחל ליצור לישדים עבור המדריכים' : 'נסה לשנות את טווח התאריכים או לנקות את הסינון'}
                 </p>
-                <Button 
-                  className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 shadow-lg"
+                <Button
+                  variant="brand"
                   onClick={() => setIsAssignmentDialogOpen(true)}
                 >
                   <Plus className="h-4 w-4 mr-2" />
@@ -567,7 +569,7 @@ const pendingClosures = filteredSalesLeads.filter(
     const value = priceValues[lead.id] ?? lead.potential_value ?? 0;
 
     return (
-      <Card key={lead.id} className="shadow-lg border-0 bg-white/90 backdrop-blur-sm hover:shadow-xl transition-all">
+      <Card key={lead.id} className="shadow-brand-md hover:shadow-brand-lg transition-all">
         <CardHeader className="pb-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center">
@@ -704,7 +706,7 @@ const pendingClosures = filteredSalesLeads.filter(
         </div>
 
         {/* Monthly Summary */}
-        <Card className="shadow-xl border-0 bg-gradient-to-r from-purple-600 to-pink-600 text-white">
+        <Card className="shadow-brand-lg border-0 bg-brand-gradient text-white">
           <CardHeader>
             <CardTitle className="text-2xl flex items-center">
               <DollarSign className="h-7 w-7 ml-2" />

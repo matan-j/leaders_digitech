@@ -1,13 +1,11 @@
 // Academic year constants. Stored as TEXT in the DB; constrained to this list
 // in the UI by rendering a <Select> instead of free input.
 //
-// Order matters: the first entry is the current default for new orders.
-// When a new school year starts, prepend it (do NOT remove old years — existing
-// orders still reference them).
+// Order matters: the first entry is the default for new orders. Add the
+// next year at the end of the array; trim past years when they're no longer
+// planning-relevant.
 
 export const ACADEMIC_YEARS = [
-  'תשפ"ה',
-  'תשפ"ו',
   'תשפ"ז',
   'תשפ"ח',
 ] as const;

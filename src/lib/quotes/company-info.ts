@@ -11,9 +11,10 @@ export interface CompanyInfo {
   phone: string;
   email: string;
   website: string;
-  taxId: string;       // ע.מ. / ח.פ.
+  taxId: string;          // ע.מ. / ח.פ.
   tagline: string;
-  logoUrl: string;     // public URL — either a Supabase storage URL or a /public path
+  logoUrl: string;        // shown on quote PDFs / external documents
+  displayLogoUrl: string; // shown in the app header / in-system UI only
 }
 
 export const DEFAULT_COMPANY_INFO: CompanyInfo = {
@@ -25,6 +26,7 @@ export const DEFAULT_COMPANY_INFO: CompanyInfo = {
   taxId: '516613742',
   tagline: '',
   logoUrl: '/logoReg.png',
+  displayLogoUrl: '/logoReg.png',
 };
 
 const SETTINGS_KEY = 'company_info';

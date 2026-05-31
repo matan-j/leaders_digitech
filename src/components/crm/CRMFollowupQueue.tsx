@@ -36,9 +36,9 @@ type Group = 'overdue' | 'today' | 'soon';
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
 const C = {
-  bg: '#F8F9FB', surface: '#FFFFFF', border: '#E4E7ED', borderLight: '#F0F2F5',
+  bg: '#F7F8FC', surface: '#FFFFFF', border: '#E5E7EB', borderLight: '#F0F2F5',
   text: '#111827', textSub: '#6B7280', textDim: '#9CA3AF',
-  accent: '#3B5BDB', accentBg: '#EEF2FF',
+  accent: '#6D28D9', accentBg: '#F3E8FF',
   success: '#16A34A', successBg: '#DCFCE7',
   warning: '#D97706', warningBg: '#FEF3C7',
   danger: '#DC2626', dangerBg: '#FEE2E2',

@@ -20,11 +20,13 @@ const BUCKET = 'branding';
 const CompanyInfoSettings: React.FC = () => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const displayFileInputRef = useRef<HTMLInputElement>(null);
 
   const [info, setInfo] = useState<CompanyInfo>(DEFAULT_COMPANY_INFO);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadingDisplay, setUploadingDisplay] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -50,7 +52,12 @@ const CompanyInfoSettings: React.FC = () => {
     }
   };
 
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const uploadLogoToField = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    field: 'logoUrl' | 'displayLogoUrl',
+    inputRef: React.RefObject<HTMLInputElement>,
+    setBusy: (b: boolean) => void,
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -59,11 +66,12 @@ const CompanyInfoSettings: React.FC = () => {
       return;
     }
 
-    setUploading(true);
+    setBusy(true);
     try {
       const ext = file.name.split('.').pop()?.toLowerCase() || 'png';
-      // unique filename so cached PDFs don't serve stale image
-      const filename = `logo-${Date.now()}.${ext}`;
+      // unique filename so cached PDFs / browser caches don't serve stale image
+      const prefix = field === 'displayLogoUrl' ? 'display-logo' : 'logo';
+      const filename = `${prefix}-${Date.now()}.${ext}`;
 
       const { error: upErr } = await supabase.storage
         .from(BUCKET)
@@ -75,19 +83,24 @@ const CompanyInfoSettings: React.FC = () => {
       }
 
       const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(filename);
-      const newInfo = { ...info, logoUrl: pub.publicUrl };
+      const newInfo = { ...info, [field]: pub.publicUrl };
       setInfo(newInfo);
 
-      // persist immediately so the PDF picks it up even without pressing Save
       await saveCompanyInfo(newInfo);
       toast({ title: 'הלוגו עודכן' });
     } catch (e: any) {
       toast({ title: 'שגיאה', description: e?.message, variant: 'destructive' });
     } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = '';
     }
   };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) =>
+    uploadLogoToField(e, 'logoUrl', fileInputRef, setUploading);
+
+  const handleDisplayLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) =>
+    uploadLogoToField(e, 'displayLogoUrl', displayFileInputRef, setUploadingDisplay);
 
   const handleResetLogo = async () => {
     if (!window.confirm('להחזיר ללוגו ברירת המחדל?')) return;
@@ -95,6 +108,14 @@ const CompanyInfoSettings: React.FC = () => {
     setInfo(newInfo);
     await saveCompanyInfo(newInfo);
     toast({ title: 'הלוגו אופס לברירת המחדל' });
+  };
+
+  const handleResetDisplayLogo = async () => {
+    if (!window.confirm('להחזיר את לוגו התצוגה לברירת המחדל?')) return;
+    const newInfo = { ...info, displayLogoUrl: DEFAULT_COMPANY_INFO.displayLogoUrl };
+    setInfo(newInfo);
+    await saveCompanyInfo(newInfo);
+    toast({ title: 'לוגו התצוגה אופס לברירת המחדל' });
   };
 
   if (loading) {
@@ -107,12 +128,79 @@ const CompanyInfoSettings: React.FC = () => {
 
   return (
     <div dir="rtl" className="space-y-6">
+      {/* In-system display logo — shown in the app header, not on documents */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">לוגו</CardTitle>
+          <CardTitle className="text-lg">לוגו להצגה במערכת</CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            לוגו זה יופיע בראש המערכת (בסרגל העליון). הוא נפרד מהלוגו של המסמכים — כך שאפשר להציג כאן וריאציה ייעודית לתצוגה דיגיטלית.
+          </p>
         </CardHeader>
         <CardContent className="flex flex-col md:flex-row gap-6 items-center">
-          <div className="border rounded-lg p-4 bg-gray-50 w-48 h-32 flex items-center justify-center">
+          <div className="border rounded-lg p-4 bg-brand-gradient w-48 h-32 flex items-center justify-center">
+            {info.displayLogoUrl ? (
+              <img
+                src={info.displayLogoUrl}
+                alt="לוגו תצוגה"
+                className="max-w-full max-h-full object-contain"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            ) : (
+              <span className="text-white/80 text-sm">אין לוגו</span>
+            )}
+          </div>
+
+          <div className="flex-1 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              מומלץ PNG/SVG על רקע שקוף, ממדים אופטימליים סביב 256×96 פיקסל. הלוגו ימתח לפי הגובה ויישמר ב־aspect ratio. מקסימום 2MB.
+            </p>
+            <div className="flex gap-2 flex-wrap">
+              <input
+                ref={displayFileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                className="hidden"
+                onChange={handleDisplayLogoUpload}
+              />
+              <Button
+                type="button"
+                variant="brand"
+                onClick={() => displayFileInputRef.current?.click()}
+                disabled={uploadingDisplay}
+              >
+                {uploadingDisplay ? <Loader2 className="ms-2 h-4 w-4 animate-spin" /> : <Upload className="ms-2 h-4 w-4" />}
+                {uploadingDisplay ? 'מעלה...' : 'העלה לוגו תצוגה'}
+              </Button>
+              <Button type="button" variant="outline" onClick={handleResetDisplayLogo} disabled={uploadingDisplay}>
+                איפוס לברירת מחדל
+              </Button>
+              {info.displayLogoUrl && (
+                <a
+                  href={info.displayLogoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-primary hover:underline inline-flex items-center gap-1 ms-1 self-center"
+                >
+                  פתיחה בכרטיסייה חדשה <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Document logo — appears on quote PDFs */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">לוגו למסמכים (הצעות מחיר / PDF)</CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            לוגו זה משמש בראש כל הצעת מחיר שתופק כ־PDF. נפרד מלוגו התצוגה במערכת כדי שתוכל להחזיק וריאציות שונות.
+          </p>
+        </CardHeader>
+        <CardContent className="flex flex-col md:flex-row gap-6 items-center">
+          <div className="border rounded-lg p-4 bg-muted w-48 h-32 flex items-center justify-center">
             {info.logoUrl ? (
               <img
                 src={info.logoUrl}
@@ -123,13 +211,13 @@ const CompanyInfoSettings: React.FC = () => {
                 }}
               />
             ) : (
-              <span className="text-gray-400 text-sm">אין לוגו</span>
+              <span className="text-muted-foreground text-sm">אין לוגו</span>
             )}
           </div>
 
           <div className="flex-1 space-y-3">
-            <p className="text-sm text-gray-600">
-              לוגו יופיע בראש כל הצעת מחיר שתופק כ־PDF. מומלץ PNG/SVG על רקע שקוף או לבן. מקסימום 2MB.
+            <p className="text-sm text-muted-foreground">
+              מומלץ PNG/SVG על רקע שקוף או לבן. מקסימום 2MB.
             </p>
             <div className="flex gap-2 flex-wrap">
               <input
@@ -145,7 +233,7 @@ const CompanyInfoSettings: React.FC = () => {
                 disabled={uploading}
               >
                 {uploading ? <Loader2 className="ms-2 h-4 w-4 animate-spin" /> : <Upload className="ms-2 h-4 w-4" />}
-                {uploading ? 'מעלה...' : 'העלה לוגו'}
+                {uploading ? 'מעלה...' : 'העלה לוגו מסמך'}
               </Button>
               <Button type="button" variant="outline" onClick={handleResetLogo} disabled={uploading}>
                 איפוס לברירת מחדל
@@ -155,7 +243,7 @@ const CompanyInfoSettings: React.FC = () => {
                   href={info.logoUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1 ms-1 self-center"
+                  className="text-xs text-primary hover:underline inline-flex items-center gap-1 ms-1 self-center"
                 >
                   פתיחה בכרטיסייה חדשה <ExternalLink className="h-3 w-3" />
                 </a>

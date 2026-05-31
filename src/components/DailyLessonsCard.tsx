@@ -202,8 +202,8 @@ export const DailyLessonsCard: React.FC<any> = ({
   }, [instructors, lessons]);
 
   return (
-    <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-      <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-t-lg">
+    <Card className="shadow-brand-md overflow-hidden">
+      <CardHeader className="bg-brand-gradient text-white rounded-t-lg">
         <div className="flex justify-between items-center">
           <CardTitle className="flex items-center text-xl">
             <Calendar className="h-8 w-6 mr-3" />
@@ -211,9 +211,10 @@ export const DailyLessonsCard: React.FC<any> = ({
           </CardTitle>
           {onAddLesson && user.user_metadata.role !== "instructor" && (
             <Button
+              variant="success"
               size="sm"
               onClick={onAddLesson}
-              className="bg-green-600 hover:bg-green-700 text-white shadow-md"
+              className="shadow-brand-sm"
             >
               <Plus className="h-4 w-4 mr-2" />
               צור תכנית לימוד חדשה
@@ -287,7 +288,7 @@ export const DailyLessonsCard: React.FC<any> = ({
                       { state: { selectedDate: new Date().toISOString() } }
                     )
                   }
-                  className="bg-blue-500 text-white rounded-full px-4 py-3 font-bold text-base transition-colors hover:bg-blue-600 shadow-md"
+                  className="bg-brand-gradient text-white rounded-full px-4 py-3 font-bold text-base transition-all hover:brightness-110 shadow-brand-md"
                 >
                   📋 דווח על השיעור
                 </button>

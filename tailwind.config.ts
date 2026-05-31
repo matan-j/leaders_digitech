@@ -61,12 +61,34 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
+				},
+				brand: {
+					blue: 'hsl(var(--brand-blue))',
+					purple: 'hsl(var(--brand-purple))',
+					'purple-deep': 'hsl(var(--brand-purple-deep))',
+					'purple-soft': 'hsl(var(--brand-purple-soft))',
+					green: 'hsl(var(--brand-green))',
+					success: 'hsl(var(--brand-success))',
+					warning: 'hsl(var(--brand-warning))'
 				}
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
-				md: 'calc(var(--radius) - 2px)',
-				sm: 'calc(var(--radius) - 4px)'
+				md: 'calc(var(--radius) - 4px)',
+				sm: 'calc(var(--radius) - 8px)',
+				'brand-xl': '20px'
+			},
+			boxShadow: {
+				'brand-sm': '0 1px 2px hsl(var(--brand-purple) / 0.04)',
+				'brand-md': '0 4px 12px hsl(var(--brand-purple) / 0.06)',
+				'brand-lg': '0 10px 30px hsl(var(--brand-purple) / 0.08)',
+				'brand-header': '0 2px 12px hsl(var(--brand-purple-deep) / 0.18)'
+			},
+			backgroundImage: {
+				'brand-gradient':
+					'linear-gradient(90deg, hsl(var(--brand-grad-from)) 0%, hsl(var(--brand-grad-via)) 50%, hsl(var(--brand-grad-to)) 100%)',
+				'brand-gradient-soft':
+					'linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--card)) 100%)'
 			},
 			keyframes: {
 				'accordion-down': {

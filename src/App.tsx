@@ -22,6 +22,7 @@ import AdminSettings from "./pages/AdminSettings";
 import ResetPassword from "./components/ResetPassword";
 import CRM from "./pages/CRM";
 import CRMInstitution from "./pages/CRMInstitution";
+import CRMInstructor from "./pages/CRMInstructor";
 import Products from "./pages/Products";
 import Tasks from "./pages/Tasks";
 
@@ -35,7 +36,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+          <div className="min-h-screen bg-background">
             <Routes>
               <Route path="/auth" element={<Auth />} />
              <Route path="/verify" element={<VerifyPage />} />
@@ -171,6 +172,17 @@ const App = () => (
                     <div className="min-h-screen">
                       <Navigation />
                       <CRMInstitution />
+                    </div>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/crm/instructor/:id"
+                element={
+                  <ProtectedRoute allowedRoles={['admin', 'sales_rep']}>
+                    <div className="min-h-screen">
+                      <Navigation />
+                      <CRMInstructor />
                     </div>
                   </ProtectedRoute>
                 }

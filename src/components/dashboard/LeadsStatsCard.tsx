@@ -88,11 +88,11 @@ export default function LeadsStatsCard() {
 
   if (loading) {
     return (
-      <Card className="border-0 shadow-lg bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50">
+      <Card className="shadow-brand-md">
         <CardContent className="p-6">
           <div className="flex items-center justify-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-            <span className="mr-2 text-gray-600">טוען נתוני לידים...</span>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            <span className="mr-2 text-muted-foreground">טוען נתוני לידים...</span>
           </div>
         </CardContent>
       </Card>
@@ -100,13 +100,13 @@ export default function LeadsStatsCard() {
   }
 
   return (
-    <Card className="border-0 shadow-xl bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50 hover:shadow-2xl transition-all duration-300">
+    <Card className="shadow-brand-md hover:shadow-brand-lg transition-all duration-300">
       <CardHeader className="pb-4">
-        <CardTitle className="flex items-center text-xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-          <Building className="h-6 w-6 text-purple-600 ml-2" />
+        <CardTitle className="flex items-center text-xl font-bold bg-brand-gradient bg-clip-text text-transparent">
+          <Building className="h-6 w-6 text-primary ml-2" />
           ריכוז לידים ובתי ספר
         </CardTitle>
-        <p className="text-sm text-gray-600 mt-1">מעקב אחר ביצועי המכירות והתקדמות עם מוסדות חינוך</p>
+        <p className="text-sm text-muted-foreground mt-1">מעקב אחר ביצועי המכירות והתקדמות עם מוסדות חינוך</p>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* סיכום כללי */}
@@ -167,19 +167,19 @@ export default function LeadsStatsCard() {
         </div>
 
         {/* סיכום */}
-        <div className="mt-6 p-4 bg-gradient-to-r from-purple-100 to-indigo-100 rounded-lg border border-purple-200">
+        <div className="mt-6 p-4 bg-accent rounded-lg border border-primary/20">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-              <Target className="h-5 w-5 text-purple-600 ml-2" />
-              <span className="text-sm font-medium text-purple-800">סה״כ לידים במערכת</span>
+              <Target className="h-5 w-5 text-primary ml-2" />
+              <span className="text-sm font-medium text-accent-foreground">סה״כ לידים במערכת</span>
             </div>
-            <Badge variant="secondary" className="bg-purple-600 text-white text-xl font-bold px-4 py-2">
+            <Badge variant="secondary" className="bg-primary text-primary-foreground text-xl font-bold px-4 py-2">
               {stats.total}
             </Badge>
           </div>
 
           {stats.total > 0 && (
-            <div className="mt-3 text-xs text-purple-600">
+            <div className="mt-3 text-xs text-accent-foreground/70">
               <div className="flex justify-between">
                 <span>אחוז הצלחה:</span>
                 <span className="font-semibold">
@@ -199,9 +199,9 @@ export default function LeadsStatsCard() {
         {/* הודעות מצב */}
         {stats.total === 0 && (
           <div className="text-center py-4">
-            <AlertCircle className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-            <p className="text-sm text-gray-600">אין לידים במערכת כרגע</p>
-            <p className="text-xs text-gray-500 mt-1">הקצו לידים חדשים למדריכים דרך מסך התגמולים</p>
+            <AlertCircle className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">אין לידים במערכת כרגע</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">הקצו לידים חדשים למדריכים דרך מסך התגמולים</p>
           </div>
         )}
 
@@ -228,10 +228,11 @@ export default function LeadsStatsCard() {
         )}
 
         {/* כפתור לעבור לדף התגמולים */}
-        <div className="mt-4 pt-4 border-t border-purple-200">
-          <Button 
+        <div className="mt-4 pt-4 border-t border-border">
+          <Button
+            variant="brand"
             onClick={() => navigate('/rewards')}
-            className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-medium shadow-lg transition-all duration-200"
+            className="w-full"
           >
             <ExternalLink className="h-4 w-4 ml-2" />
             צפייה בפירוט מלא ומעקב לידים

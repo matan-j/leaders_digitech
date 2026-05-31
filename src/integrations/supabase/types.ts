@@ -62,6 +62,48 @@ export type Database = {
           },
         ]
       }
+      academic_year_order_group_instances: {
+        Row: {
+          course_instance_id: string
+          created_at: string
+          created_by: string | null
+          group_id: string
+          id: string
+          notes: string | null
+        }
+        Insert: {
+          course_instance_id: string
+          created_at?: string
+          created_by?: string | null
+          group_id: string
+          id?: string
+          notes?: string | null
+        }
+        Update: {
+          course_instance_id?: string
+          created_at?: string
+          created_by?: string | null
+          group_id?: string
+          id?: string
+          notes?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academic_year_order_group_instances_course_instance_id_fkey"
+            columns: ["course_instance_id"]
+            isOneToOne: false
+            referencedRelation: "course_instances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "academic_year_order_group_instances_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "academic_year_order_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       academic_year_order_groups: {
         Row: {
           age_group: string | null
@@ -1593,6 +1635,188 @@ export type Database = {
           {
             foreignKeyName: "educational_institutions_crm_owner_id_fkey"
             columns: ["crm_owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instructor_assignments: {
+        Row: {
+          course_id: string | null
+          created_at: string
+          created_by: string | null
+          day_of_week: number | null
+          end_time: string | null
+          group_id: string | null
+          id: string
+          institution_id: string | null
+          instructor_id: string
+          notes: string | null
+          school_year: string | null
+          start_time: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          course_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          day_of_week?: number | null
+          end_time?: string | null
+          group_id?: string | null
+          id?: string
+          institution_id?: string | null
+          instructor_id: string
+          notes?: string | null
+          school_year?: string | null
+          start_time?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          course_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          day_of_week?: number | null
+          end_time?: string | null
+          group_id?: string | null
+          id?: string
+          institution_id?: string | null
+          instructor_id?: string
+          notes?: string | null
+          school_year?: string | null
+          start_time?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instructor_assignments_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instructor_assignments_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "academic_year_order_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instructor_assignments_institution_id_fkey"
+            columns: ["institution_id"]
+            isOneToOne: false
+            referencedRelation: "educational_institutions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instructor_assignments_instructor_id_fkey"
+            columns: ["instructor_id"]
+            isOneToOne: false
+            referencedRelation: "instructors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instructors: {
+        Row: {
+          address: string | null
+          audiences: string[]
+          availability_days: number[]
+          availability_hours: Json | null
+          city: string
+          created_at: string
+          created_by: string | null
+          email: string | null
+          employment_type: string | null
+          full_name: string
+          hourly_rate: number | null
+          hourly_rate_notes: string | null
+          id: string
+          languages: string[]
+          notes: string | null
+          phone: string | null
+          profile_id: string | null
+          quality_tags: string[]
+          rating_notes: string | null
+          rating_score: number | null
+          region: string | null
+          role_type: string | null
+          status: string
+          subjects: string[]
+          travel_radius_km: number | null
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          audiences?: string[]
+          availability_days?: number[]
+          availability_hours?: Json | null
+          city: string
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          employment_type?: string | null
+          full_name: string
+          hourly_rate?: number | null
+          hourly_rate_notes?: string | null
+          id?: string
+          languages?: string[]
+          notes?: string | null
+          phone?: string | null
+          profile_id?: string | null
+          quality_tags?: string[]
+          rating_notes?: string | null
+          rating_score?: number | null
+          region?: string | null
+          role_type?: string | null
+          status?: string
+          subjects?: string[]
+          travel_radius_km?: number | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          audiences?: string[]
+          availability_days?: number[]
+          availability_hours?: Json | null
+          city?: string
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          employment_type?: string | null
+          full_name?: string
+          hourly_rate?: number | null
+          hourly_rate_notes?: string | null
+          id?: string
+          languages?: string[]
+          notes?: string | null
+          phone?: string | null
+          profile_id?: string | null
+          quality_tags?: string[]
+          rating_notes?: string | null
+          rating_score?: number | null
+          region?: string | null
+          role_type?: string | null
+          status?: string
+          subjects?: string[]
+          travel_radius_km?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instructors_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instructors_profile_id_fkey"
+            columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles_public"
             referencedColumns: ["id"]
@@ -3236,3 +3460,6 @@ export const Constants = {
     },
   },
 } as const
+<claude-code-hint v="1" type="plugin" value="supabase@claude-plugins-official" />
+A new version of Supabase CLI is available: v2.101.0 (currently installed v2.98.2)
+We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli

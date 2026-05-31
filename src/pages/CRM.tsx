@@ -6,6 +6,7 @@ import CRMPipeline from '@/components/crm/CRMPipeline';
 import CRMMessagesEditor from '@/components/crm/CRMMessagesEditor';
 import CRMBroadcast from '@/components/crm/CRMBroadcast';
 import CRMAcademicOrders from '@/components/crm/CRMAcademicOrders';
+import CRMInstructorsList from '@/components/crm/CRMInstructorsList';
 
 export type CRMTab =
   | 'dashboard'
@@ -13,6 +14,7 @@ export type CRMTab =
   | 'customers'
   | 'pipeline'
   | 'academic-orders'
+  | 'instructors'
   | 'messages'
   | 'broadcast';
 
@@ -22,6 +24,7 @@ const TAB_FROM_LABEL: Record<string, CRMTab> = {
   'לקוחות': 'customers',
   'פייפליין': 'pipeline',
   'הזמנות לשנה"ל': 'academic-orders',
+  'מדריכים ומרצים': 'instructors',
   'עורך הודעות': 'messages',
   'שליחה בקבוצות': 'broadcast',
 };
@@ -39,6 +42,7 @@ const NAV_TABS: { id: CRMTab; label: string }[] = [
   { id: 'customers',       label: 'לקוחות' },
   { id: 'pipeline',        label: 'פייפליין' },
   { id: 'academic-orders', label: 'הזמנות לשנה"ל' },
+  { id: 'instructors',     label: 'מדריכים ומרצים' },
   { id: 'messages',        label: 'עורך הודעות' },
   { id: 'broadcast',       label: 'שליחה בקבוצות' },
 ];
@@ -111,6 +115,7 @@ const CRM = () => {
         {activeTab === 'customers'        && <CRMInstitutionsList setTab={handleTabChange} mode="customers" />}
         {activeTab === 'pipeline'         && <CRMPipeline />}
         {activeTab === 'academic-orders'  && <CRMAcademicOrders />}
+        {activeTab === 'instructors'      && <CRMInstructorsList />}
         {activeTab === 'messages'         && <CRMMessagesEditor />}
         {activeTab === 'broadcast'        && <CRMBroadcast />}
       </div>

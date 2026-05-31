@@ -10,7 +10,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { sb } from '@/lib/instructors/db';
 import { supabase } from '@/integrations/supabase/client';
 import {
   getRegionColor, getRegionLabel,
@@ -22,6 +21,7 @@ import {
 } from '@/lib/instructors/validation';
 import AddInstructorModal, { type InstructorRecord } from '@/components/crm/AddInstructorModal';
 import FindMatchingInstructorDialog from '@/components/crm/FindMatchingInstructorDialog';
+import AssignInstructorPlanningDialog from '@/components/crm/AssignInstructorPlanningDialog';
 
 interface Instructor extends InstructorRecord {
   id: string;
@@ -33,6 +33,18 @@ interface ActiveCourseInstance {
   end_date: string | null;
   course: { id: string; name: string } | null;
   institution: { id: string; name: string; city: string | null } | null;
+}
+
+interface PlanningAssignment {
+  id: string;
+  status: string;
+  school_year: string | null;
+  day_of_week: number | null;
+  start_time: string | null;
+  end_time: string | null;
+  notes: string | null;
+  institution: { id: string; name: string; city: string | null } | null;
+  course: { id: string; name: string } | null;
 }
 
 const DAY_LABELS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
@@ -57,11 +69,13 @@ const CRMInstructor = () => {
 
   // Active course instances when profile_id present
   const [activeCi, setActiveCi] = useState<ActiveCourseInstance[]>([]);
+  const [planningAssignments, setPlanningAssignments] = useState<PlanningAssignment[]>([]);
+  const [addingAssignment, setAddingAssignment] = useState(false);
 
   const fetchInstructor = async () => {
     if (!id) return;
     setLoading(true);
-    const { data, error } = await sb
+    const { data, error } = await supabase
       .from('instructors')
       .select('*')
       .eq('id', id)
@@ -92,6 +106,13 @@ const CRMInstructor = () => {
     } else {
       setActiveCi([]);
     }
+
+    const { data: paRows } = await supabase
+      .from('instructor_assignments')
+      .select('id, status, school_year, day_of_week, start_time, end_time, notes, institution:educational_institutions(id, name, city), course:courses(id, name)')
+      .eq('instructor_id', row.id)
+      .order('created_at', { ascending: false });
+    setPlanningAssignments(((paRows as unknown) as PlanningAssignment[]) ?? []);
   };
 
   useEffect(() => {
@@ -107,7 +128,7 @@ const CRMInstructor = () => {
       return;
     }
     setSavingRating(true);
-    const { error } = await sb
+    const { error } = await supabase
       .from('instructors')
       .update({
         rating_score: numeric,
@@ -128,7 +149,7 @@ const CRMInstructor = () => {
     if (!instructor) return;
     if (notes === (instructor.notes ?? '')) return;
     setNotesSaving(true);
-    const { error } = await sb
+    const { error } = await supabase
       .from('instructors')
       .update({ notes: notes.trim() || null })
       .eq('id', instructor.id);
@@ -337,9 +358,9 @@ const CRMInstructor = () => {
             </Section>
           </TabsContent>
 
-          <TabsContent value="assignments" className="bg-white border border-gray-200 rounded-md p-5 mt-3">
-            <div className="flex items-baseline justify-between mb-4">
-              <h3 className="text-sm font-semibold text-gray-700">שיבוצים פעילים</h3>
+          <TabsContent value="assignments" className="bg-white border border-gray-200 rounded-md p-5 mt-3 space-y-6">
+            <div className="flex items-baseline justify-between">
+              <h3 className="text-sm font-semibold text-gray-700">שיבוצים פעילים (קורסים בפועל)</h3>
               <span className="text-xs text-gray-500">עומס נוכחי: {currentLoad}</span>
             </div>
             {!instructor.profile_id ? (
@@ -385,8 +406,49 @@ const CRMInstructor = () => {
                 </table>
               </div>
             )}
-            <div className="mt-6 text-xs text-gray-500">
-              שיבוצים עתידיים (instructor_assignments) יוצגו כאן בשלב הבא.
+            <div className="pt-2 border-t border-gray-100">
+              <div className="flex items-baseline justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-700">שיבוצי תכנון</h3>
+                <Button size="sm" variant="outline" onClick={() => setAddingAssignment(true)}>
+                  + הוסף שיבוץ
+                </Button>
+              </div>
+              {planningAssignments.length === 0 ? (
+                <div className="text-xs text-gray-500 bg-gray-50 rounded p-3">
+                  אין שיבוצי תכנון. לחץ "הוסף שיבוץ" כדי לקשר את המדריך למוסד / קורס לשנה"ל הקרובה.
+                </div>
+              ) : (
+                <div className="border rounded overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-600">מוסד</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-600">קורס</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-600">שנה"ל</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-600">יום</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-600">שעות</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-600">סטטוס</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {planningAssignments.map((pa) => (
+                        <tr key={pa.id} className="border-t border-gray-100">
+                          <td className="px-3 py-2 text-gray-800">{pa.institution?.name ?? '—'}</td>
+                          <td className="px-3 py-2 text-gray-800">{pa.course?.name ?? '—'}</td>
+                          <td className="px-3 py-2 text-gray-600">{pa.school_year ?? '—'}</td>
+                          <td className="px-3 py-2 text-gray-600">
+                            {pa.day_of_week !== null ? DAY_LABELS[pa.day_of_week] : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-gray-600">
+                            {pa.start_time && pa.end_time ? `${pa.start_time}–${pa.end_time}` : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-gray-600">{pa.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </TabsContent>
 
@@ -504,6 +566,15 @@ const CRMInstructor = () => {
           setFindingMatch(false);
           navigate(`/crm/instructor/${otherId}`);
         }}
+      />
+
+      <AssignInstructorPlanningDialog
+        open={addingAssignment}
+        onOpenChange={setAddingAssignment}
+        instructorId={instructor.id}
+        instructorName={instructor.full_name}
+        focus="institution"
+        onAssigned={fetchInstructor}
       />
     </div>
   );

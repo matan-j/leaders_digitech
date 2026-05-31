@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Loader2, Plus, Upload, Download, Star, Phone, Mail,
-  Search, MoreVertical, Eye, Pencil, UserX,
+  Search, MoreVertical, Eye, Pencil, UserX, Building2, BookOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,6 @@ import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
-import { sb } from '@/lib/instructors/db';
 import { supabase } from '@/integrations/supabase/client';
 import {
   REGIONS, REGION_KEYS, getRegionColor, getRegionLabel, type RegionKey,
@@ -23,6 +22,7 @@ import {
 import InstructorRegionTabs, { type RegionTabValue } from './InstructorRegionTabs';
 import AddInstructorModal, { type InstructorRecord } from './AddInstructorModal';
 import InstructorCsvImportDialog from './InstructorCsvImportDialog';
+import AssignInstructorPlanningDialog from './AssignInstructorPlanningDialog';
 
 interface InstructorRow {
   id: string;
@@ -190,6 +190,7 @@ const CRMInstructorsList = () => {
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<InstructorRecord | null>(null);
   const [csvOpen, setCsvOpen] = useState(false);
+  const [assigning, setAssigning] = useState<{ id: string; name: string; focus: 'institution' | 'course' } | null>(null);
 
   // Persist state to sessionStorage + URL.
   useEffect(() => {
@@ -217,7 +218,7 @@ const CRMInstructorsList = () => {
 
   const fetchInstructors = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await sb
+    const { data, error } = await supabase
       .from('instructors')
       .select(
         'id, profile_id, full_name, role_type, phone, email, city, region, address, travel_radius_km, subjects, audiences, languages, availability_days, availability_hours, hourly_rate, hourly_rate_notes, employment_type, status, rating_score, rating_notes, quality_tags, notes'
@@ -381,7 +382,7 @@ const CRMInstructorsList = () => {
   });
 
   const markInactive = async (id: string) => {
-    const { error } = await sb.from('instructors').update({ status: 'inactive' }).eq('id', id);
+    const { error } = await supabase.from('instructors').update({ status: 'inactive' }).eq('id', id);
     if (error) {
       toast.error('פעולה נכשלה');
       return;
@@ -609,6 +610,14 @@ const CRMInstructorsList = () => {
                                 <Pencil className="w-3.5 h-3.5 ms-2" />
                                 עריכה
                               </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setAssigning({ id: r.id, name: r.full_name, focus: 'institution' })}>
+                                <Building2 className="w-3.5 h-3.5 ms-2" />
+                                שיוך למוסד
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setAssigning({ id: r.id, name: r.full_name, focus: 'course' })}>
+                                <BookOpen className="w-3.5 h-3.5 ms-2" />
+                                שיוך לקורס
+                              </DropdownMenuItem>
                               {r.status !== 'inactive' && (
                                 <DropdownMenuItem onClick={() => markInactive(r.id)}>
                                   <UserX className="w-3.5 h-3.5 ms-2" />
@@ -643,6 +652,16 @@ const CRMInstructorsList = () => {
         onOpenChange={setCsvOpen}
         onCompleted={fetchInstructors}
       />
+      {assigning && (
+        <AssignInstructorPlanningDialog
+          open={true}
+          onOpenChange={(o) => !o && setAssigning(null)}
+          instructorId={assigning.id}
+          instructorName={assigning.name}
+          focus={assigning.focus}
+          onAssigned={fetchInstructors}
+        />
+      )}
     </div>
   );
 };

@@ -179,6 +179,163 @@ const ChipList = ({ items, color }: { items: string[]; color: 'blue' | 'green' }
   );
 };
 
+// ── Inline editing cells ──────────────────────────────────────
+
+const inlineInputCls =
+  'w-full bg-transparent border border-transparent hover:border-gray-300 focus:border-blue-400 focus:bg-white rounded px-1.5 py-1 text-xs outline-none transition-colors';
+
+const InlineCityCell = ({
+  value, onSave,
+}: { value: string; onSave: (next: string) => void }) => {
+  const [draft, setDraft] = useState(value ?? '');
+  useEffect(() => { setDraft(value ?? ''); }, [value]);
+  return (
+    <input
+      value={draft}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        const trimmed = draft.trim();
+        if (trimmed && trimmed !== (value ?? '')) onSave(trimmed);
+        else setDraft(value ?? '');
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') { setDraft(value ?? ''); e.currentTarget.blur(); }
+      }}
+      placeholder="הוסף עיר"
+      className={`${inlineInputCls} min-w-[90px]`}
+    />
+  );
+};
+
+const InlineRegionCell = ({
+  value, onSave,
+}: { value: string | null; onSave: (next: string | null) => void }) => {
+  const color = getRegionColor(value);
+  return (
+    <div
+      className="relative inline-flex items-center"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {value ? (
+        <span
+          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] pointer-events-none ${color.badgeClass}`}
+        >
+          <span className={`inline-block w-1.5 h-1.5 rounded-full ${color.dotClass}`} />
+          {getRegionLabel(value)}
+        </span>
+      ) : (
+        <span className="text-gray-400 text-xs pointer-events-none">— בחר —</span>
+      )}
+      <select
+        value={value ?? ''}
+        onChange={(e) => onSave(e.target.value || null)}
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        aria-label="אזור"
+      >
+        <option value="">— ללא —</option>
+        {REGIONS.map((r) => (
+          <option key={r.key} value={r.key}>{r.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+};
+
+const InlineHourlyRateCell = ({
+  value, onSave,
+}: { value: number | null; onSave: (next: number | null) => void }) => {
+  const [draft, setDraft] = useState(value === null ? '' : String(value));
+  useEffect(() => { setDraft(value === null ? '' : String(value)); }, [value]);
+  const commit = () => {
+    const raw = draft.trim();
+    if (raw === '' && value !== null) { onSave(null); return; }
+    const n = parseFloat(raw);
+    if (Number.isFinite(n) && n !== value) onSave(n);
+    else if (!Number.isFinite(n)) setDraft(value === null ? '' : String(value));
+  };
+  return (
+    <div className="relative inline-flex items-center" onClick={(e) => e.stopPropagation()}>
+      <span className="text-gray-400 text-[11px] absolute right-1.5 pointer-events-none">₪</span>
+      <input
+        type="number"
+        inputMode="numeric"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Escape') { setDraft(value === null ? '' : String(value)); e.currentTarget.blur(); }
+        }}
+        placeholder="—"
+        className={`${inlineInputCls} pe-5 ps-1.5 min-w-[80px] text-left`}
+      />
+    </div>
+  );
+};
+
+const InlineListCell = ({
+  items, color, onSave,
+}: { items: string[]; color: 'blue' | 'green'; onSave: (next: string[]) => void }) => {
+  const [editing, setEditing] = useState(false);
+  const initial = (items ?? []).join('; ');
+  const [draft, setDraft] = useState(initial);
+  useEffect(() => { setDraft((items ?? []).join('; ')); }, [items]);
+
+  const cls = color === 'blue' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700';
+
+  const commit = () => {
+    const next = draft
+      .split(/[;,\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const same =
+      next.length === (items ?? []).length &&
+      next.every((v, i) => v === items[i]);
+    if (!same) onSave(next);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Escape') { setDraft((items ?? []).join('; ')); setEditing(false); }
+        }}
+        placeholder="להפריד עם ;"
+        className="w-full min-w-[160px] bg-white border border-blue-400 rounded px-1.5 py-1 text-xs outline-none"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+      title="לחץ לעריכה"
+      className="w-full min-w-[140px] flex flex-wrap items-center gap-1 min-h-[24px] hover:bg-gray-50 rounded px-1 py-0.5 text-right"
+    >
+      {(items ?? []).length === 0 ? (
+        <span className="text-gray-400 text-xs">— הוסף —</span>
+      ) : (
+        <>
+          {items.slice(0, 3).map((s) => (
+            <Badge key={s} variant="secondary" className={`${cls} text-[10px]`}>{s}</Badge>
+          ))}
+          {items.length > 3 && <span className="text-[10px] text-gray-500">+{items.length - 3}</span>}
+        </>
+      )}
+    </button>
+  );
+};
+
 const CRMInstructorsList = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -391,6 +548,41 @@ const CRMInstructorsList = () => {
     fetchInstructors();
   };
 
+  // Inline patch — optimistic update + Supabase write + revert on failure.
+  const patchRow = useCallback(async (id: string, patch: Record<string, unknown>) => {
+    let prevSnapshot: InstructorRow | undefined;
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.id === id) {
+          prevSnapshot = r;
+          return { ...r, ...patch } as InstructorRow;
+        }
+        return r;
+      })
+    );
+    const { error } = await supabase.from('instructors').update(patch).eq('id', id);
+    if (error) {
+      if (prevSnapshot) {
+        const snap = prevSnapshot;
+        setRows((prev) => prev.map((r) => (r.id === id ? snap : r)));
+      }
+      toast.error(`עדכון נכשל: ${error.message ?? ''}`);
+    }
+  }, []);
+
+  // City save: also auto-classify region when region is empty.
+  const saveCity = useCallback(
+    (row: InstructorRow, nextCity: string) => {
+      const patch: Record<string, unknown> = { city: nextCity };
+      if (!row.region) {
+        const auto = getRegionByCity(nextCity);
+        if (auto) patch.region = auto;
+      }
+      patchRow(row.id, patch);
+    },
+    [patchRow]
+  );
+
   return (
     <div dir="rtl" className="bg-background min-h-screen">
       <InstructorRegionTabs
@@ -574,22 +766,39 @@ const CRMInstructorsList = () => {
                             </a>
                           ) : '—'}
                         </td>
-                        <td className="px-3 py-2 text-gray-700">{r.city || '—'}</td>
-                        <td className="px-3 py-2">
-                          {r.region ? (
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] ${regionColor.badgeClass}`}>
-                              <span className={`inline-block w-1.5 h-1.5 rounded-full ${regionColor.dotClass}`} />
-                              {getRegionLabel(r.region)}
-                            </span>
-                          ) : <span className="text-gray-400">—</span>}
+                        <td className="px-3 py-2 text-gray-700">
+                          <InlineCityCell value={r.city} onSave={(v) => saveCity(r, v)} />
                         </td>
-                        <td className="px-3 py-2"><ChipList items={r.subjects ?? []} color="blue" /></td>
-                        <td className="px-3 py-2"><ChipList items={r.audiences ?? []} color="green" /></td>
+                        <td className="px-3 py-2">
+                          <InlineRegionCell
+                            value={r.region}
+                            onSave={(v) => patchRow(r.id, { region: v })}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <InlineListCell
+                            items={r.subjects ?? []}
+                            color="blue"
+                            onSave={(v) => patchRow(r.id, { subjects: v })}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <InlineListCell
+                            items={r.audiences ?? []}
+                            color="green"
+                            onSave={(v) => patchRow(r.id, { audiences: v })}
+                          />
+                        </td>
                         <td className="px-3 py-2">
                           <AvailabilityCompact days={r.availability_days ?? []} hours={r.availability_hours} />
                         </td>
                         <td className="px-3 py-2"><Stars score={r.rating_score} /></td>
-                        <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{formatRate(r.hourly_rate)}</td>
+                        <td className="px-3 py-2 text-gray-700 whitespace-nowrap">
+                          <InlineHourlyRateCell
+                            value={r.hourly_rate}
+                            onSave={(v) => patchRow(r.id, { hourly_rate: v })}
+                          />
+                        </td>
                         <td className="px-3 py-2 text-gray-700">
                           {r.profile_id !== null ? (load ?? 0) : '—'}
                         </td>

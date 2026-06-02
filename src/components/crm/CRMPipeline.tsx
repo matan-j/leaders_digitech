@@ -22,6 +22,7 @@ interface InstitutionRow {
   crm_class: string | null;
   crm_last_contact_at: string | null;
   crm_potential: number | null;
+  crm_notes: string | null;
   instructor: { id: string; full_name: string } | null;
 }
 
@@ -78,6 +79,7 @@ function KpiStrip({ kpis }: { kpis: KPIs }) {
 function InstitutionCard({ inst, stageColor, onDragStart }: { inst: InstitutionRow; stageColor: string; onDragStart: (id: string) => void }) {
   const hot = isHot(inst.crm_last_contact_at);
   const instrName = inst.instructor?.full_name ?? null;
+  const note = inst.crm_notes?.trim() || null;
 
   return (
     <div
@@ -106,6 +108,28 @@ function InstitutionCard({ inst, stageColor, onDragStart }: { inst: InstitutionR
           <span style={{ fontSize: 11, color: '#EF4444' }}>⚠ ללא מדריך</span>
         )}
       </div>
+      {note && (
+        <div
+          title={note}
+          style={{
+            fontSize: 11,
+            color: '#4B5563',
+            background: '#F8F9FB',
+            border: '1px solid #E5E7EB',
+            borderRadius: 6,
+            padding: '5px 7px',
+            marginBottom: 6,
+            lineHeight: 1.4,
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+            wordBreak: 'break-word',
+          }}
+        >
+          📝 {note}
+        </div>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: '#16A34A' }}>{fmt(inst.crm_potential)}</span>
         {inst.crm_last_contact_at && (
@@ -550,7 +574,7 @@ export default function CRMPipeline() {
       supabase
       .from('educational_institutions')
       .select(`
-        id, name, city, crm_stage, crm_class, crm_last_contact_at, crm_potential,
+        id, name, city, crm_stage, crm_class, crm_last_contact_at, crm_potential, crm_notes,
         instructor:crm_assigned_instructor_id (id, full_name)
       `)
       .or(CRM_SOFT_DELETE_FILTER)
@@ -589,6 +613,26 @@ export default function CRMPipeline() {
     loadStages();
     load();
   }, [loadStages, load]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('crm_pipeline_notes')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'educational_institutions' },
+        (payload) => {
+          const next = payload.new as { id?: string; crm_notes?: string | null };
+          if (!next?.id) return;
+          setInstitutions((prev) =>
+            prev.map((r) => (r.id === next.id ? { ...r, crm_notes: next.crm_notes ?? null } : r)),
+          );
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   async function handleDrop(targetStageName: string) {
     if (!draggingId.current) return;

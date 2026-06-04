@@ -3,8 +3,16 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "../auth/AuthProvider";
 import { Check } from "lucide-react";
+import LessonReport from "@/pages/LessonReport";
 
-export const ScheduleList: React.FC<any> = ({ lessons,selectedDate }) => {
+export const ScheduleList: React.FC<any> = ({
+  lessons,
+  selectedDate,
+  onOpenLessonReport,
+  openLessonReportContext,
+  onCloseLessonReport,
+  onLessonReportSuccess,
+}) => {
   const nav = useNavigate();
   const [instructors, setInstructors] = useState<
     { id: string; full_name: string }[]
@@ -140,6 +148,28 @@ const sortedLessons = lessons.sort((a, b) => {
     return map;
   }, [instructors]);
 
+  const openLessonReport = (
+    context: {
+      inlineKey?: string;
+      lessonId?: string;
+      scheduleId?: string;
+      courseInstanceId?: string;
+      editReportId?: string;
+      instructorId?: string;
+      selectedDate?: string;
+    },
+    fallbackPath: string
+  ) => {
+    if (onOpenLessonReport) {
+      onOpenLessonReport(context);
+      return;
+    }
+
+    nav(fallbackPath, {
+      state: { selectedDate: selectedDate?.toISOString() },
+    });
+  };
+
   // Function to get report ID for a specific lesson
   const getReportIdForLesson = (lessonItem: any) => {
     // Try to find a report that matches this lesson
@@ -163,6 +193,31 @@ if (lessonItem.id) {
       return status?.reportId || null;
     }
     return null;
+  };
+
+  const getLessonInlineKey = (item: any) =>
+    item?.id || `${item?.course_instance_id || "course"}_${item?.lesson?.id || item?.lesson_id || "lesson"}`;
+
+  const renderInlineReport = (inlineKey: string) => {
+    if (!openLessonReportContext || openLessonReportContext.inlineKey !== inlineKey) {
+      return null;
+    }
+
+    return (
+      <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/40 p-2 sm:p-3">
+        <LessonReport
+          embedded
+          lessonId={openLessonReportContext.lessonId}
+          scheduleId={openLessonReportContext.scheduleId}
+          courseInstanceId={openLessonReportContext.courseInstanceId}
+          editReportId={openLessonReportContext.editReportId}
+          instructorId={openLessonReportContext.instructorId}
+          selectedDate={openLessonReportContext.selectedDate}
+          onCancel={onCloseLessonReport}
+          onSuccess={onLessonReportSuccess}
+        />
+      </div>
+    );
   };
 
  return (
@@ -192,6 +247,7 @@ if (lessonItem.id) {
         ? `${item.course_instance_id}_${item.lesson.id}`
         : "";
       const lessonStatus = reportStatusMap.get(statusKey);
+      const inlineKey = getLessonInlineKey(item);
 
      const renderStatusBadge = () => {
   if (lessonStatus?.isCompleted === false) {
@@ -212,11 +268,16 @@ if (lessonItem.id) {
             onClick={() => {
               const reportId = getReportIdForLesson(item);
               if (reportId) {
-                nav(
-                  `/lesson-report/${item?.lesson?.id}?scheduleId=${item.id}&courseInstanceId=${item.course_instance_id}&editReportId=${reportId}`,
+                openLessonReport(
                   {
-                    state: { selectedDate: selectedDate?.toISOString() },
-                  }
+                    inlineKey,
+                    lessonId: item?.lesson?.id,
+                    scheduleId: item.id,
+                    courseInstanceId: item.course_instance_id,
+                    editReportId: reportId,
+                    selectedDate: selectedDate?.toISOString(),
+                  },
+                  `/lesson-report/${item?.lesson?.id}?scheduleId=${item.id}&courseInstanceId=${item.course_instance_id}&editReportId=${reportId}`
                 );
               }
             }}
@@ -247,11 +308,15 @@ if (lessonItem.id) {
             onClick={() => {
               const reportId = getReportIdForLesson(item);
               if (reportId) {
-                nav(
-                  `/lesson-report/${item?.lesson?.id}?courseInstanceId=${item.course_instance_id}&editReportId=${reportId}`,
+                openLessonReport(
                   {
-                    state: { selectedDate: selectedDate?.toISOString() },
-                  }
+                    inlineKey,
+                    lessonId: item?.lesson?.id,
+                    courseInstanceId: item.course_instance_id,
+                    editReportId: reportId,
+                    selectedDate: selectedDate?.toISOString(),
+                  },
+                  `/lesson-report/${item?.lesson?.id}?courseInstanceId=${item.course_instance_id}&editReportId=${reportId}`
                 );
               }
             }}
@@ -279,11 +344,16 @@ if (lessonItem.id) {
             onClick={() => {
               const reportId = getReportIdForLesson(item);
               if (reportId) {
-                nav(
-                  `/lesson-report/${item?.lesson?.id}?scheduleId=${item.id}&courseInstanceId=${item.course_instance_id}&editReportId=${reportId}`,
+                openLessonReport(
                   {
-                    state: { selectedDate: selectedDate?.toISOString() },
-                  }
+                    inlineKey,
+                    lessonId: item?.lesson?.id,
+                    scheduleId: item.id,
+                    courseInstanceId: item.course_instance_id,
+                    editReportId: reportId,
+                    selectedDate: selectedDate?.toISOString(),
+                  },
+                  `/lesson-report/${item?.lesson?.id}?scheduleId=${item.id}&courseInstanceId=${item.course_instance_id}&editReportId=${reportId}`
                 );
               }
             }}
@@ -305,14 +375,21 @@ if (lessonItem.id) {
 
     return canReport ? (
       <button
-        onClick={() =>
-          nav(
-            `/lesson-report/${item?.lesson?.id}?scheduleId=${item.id}&courseInstanceId=${item.course_instance_id}&instructorId=${
-              item.course_instances?.instructor?.id || item.instructor_id
-            }`,
-            { state: { selectedDate: selectedDate?.toISOString() } }
-          )
-        }
+        onClick={() => {
+          const instructorId =
+            item.course_instances?.instructor?.id || item.instructor_id;
+          openLessonReport(
+            {
+              inlineKey,
+              lessonId: item?.lesson?.id,
+              scheduleId: item.id,
+              courseInstanceId: item.course_instance_id,
+              instructorId,
+              selectedDate: selectedDate?.toISOString(),
+            },
+            `/lesson-report/${item?.lesson?.id}?scheduleId=${item.id}&courseInstanceId=${item.course_instance_id}&instructorId=${instructorId}`
+          );
+        }}
         className="bg-blue-500 text-white px-4 py-3 rounded-full font-bold text-base transition-colors hover:bg-blue-600 shadow-md"
       >
         📋 דווח על השיעור
@@ -383,8 +460,9 @@ if (lessonItem.id) {
             </div>
 
             {/* lesson action right */}
-            <div className="text-left">{renderStatusBadge()}</div>
+          <div className="text-left">{renderStatusBadge()}</div>
           </div>
+          {renderInlineReport(inlineKey)}
         </div>
       );
     })}

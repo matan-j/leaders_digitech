@@ -201,9 +201,9 @@ const Reports = () => {
       // כאן התיקון: במקום await supabase, אנחנו משתמשים בנתון שכבר יש לנו
       totalStudents = totalSystemStudents;
 
-      const totalScheduledLessons = selectedInstructor === 'all' 
-        ? selectedMonthData.totalScheduledLessons 
-        : selectedMonthData.totalScheduledLessons;
+      const totalScheduledLessons = selectedInstructor === 'all'
+        ? selectedMonthData.totalScheduledLessons
+        : filteredInstructors.reduce((sum, instructor) => sum + instructor.reports.length, 0);
 
       return {
         totalEarnings,
@@ -227,9 +227,13 @@ const Reports = () => {
       );
       const completedLessons = allLessonDetails.filter(lesson => lesson.lesson_status === 'completed').length;
 
-      const totalScheduledLessons = selectedInstitution === 'all' 
-        ? selectedMonthData.totalScheduledLessons 
-        : selectedMonthData.totalScheduledLessons;
+      const totalScheduledLessons = selectedInstitution === 'all'
+        ? selectedMonthData.totalScheduledLessons
+        : filteredInstitutions.reduce((sum, institution) =>
+            sum + institution.courses.reduce((courseSum, course) =>
+              courseSum + (course.scheduled_in_month ?? course.lesson_details.length), 0
+            ), 0
+          );
 
       return {
         totalEarnings,

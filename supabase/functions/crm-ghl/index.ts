@@ -6,11 +6,22 @@ const GREEN_API_INSTANCE_ID = Deno.env.get('GREEN_API_INSTANCE_ID')!
 const GREEN_API_TOKEN = Deno.env.get('GREEN_API_TOKEN')!
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const BREVO_SENDER_EMAIL = Deno.env.get('BREVO_SENDER_EMAIL')
+const BREVO_SENDER_NAME = Deno.env.get('BREVO_SENDER_NAME') ?? 'Leaders Digitech'
+const BREVO_REPLY_TO_EMAIL = Deno.env.get('BREVO_REPLY_TO_EMAIL')
+
+if (!BREVO_SENDER_EMAIL) {
+  throw new Error('Missing required Edge Function secret: BREVO_SENDER_EMAIL.')
+}
 
 const CRM_EMAIL_SENDER = {
-  name: 'Leaders CRM',
-  email: 'fransesguy1@gmail.com',
+  name: BREVO_SENDER_NAME,
+  email: BREVO_SENDER_EMAIL,
 }
+
+const CRM_EMAIL_REPLY_TO = BREVO_REPLY_TO_EMAIL
+  ? { email: BREVO_REPLY_TO_EMAIL, name: BREVO_SENDER_NAME }
+  : undefined
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -169,6 +180,7 @@ async function sendEmail(payload: {
     },
     body: JSON.stringify({
       sender: CRM_EMAIL_SENDER,
+      ...(CRM_EMAIL_REPLY_TO ? { replyTo: CRM_EMAIL_REPLY_TO } : {}),
       to: [{ email: payload.email, name: payload.contactName }],
       subject: payload.subject,
       htmlContent,
@@ -220,10 +232,10 @@ async function sendEmail(payload: {
       throw new Error('crm_communications insert failed')
     }
 
-    return { ok: true, messageId: providerMessageId, communication_id: communicationId }
+    return { ok: true, messageId: providerMessageId, communication_id: communicationId, activity_id: activityId }
   }
 
-  return { ok: true, messageId: providerMessageId, communication_id: null }
+  return { ok: true, messageId: providerMessageId, communication_id: null, activity_id: null }
 }
 
 async function sendWhatsApp(payload: {
@@ -348,6 +360,7 @@ async function sendWhatsApp(payload: {
       textIdMessage,
       attachments_sent: attachments.length,
       communication_id: communicationId,
+      activity_id: activityId,
     }
   }
 
@@ -357,6 +370,7 @@ async function sendWhatsApp(payload: {
     textIdMessage,
     attachments_sent: attachments.length,
     communication_id: null,
+    activity_id: null,
   }
 }
 

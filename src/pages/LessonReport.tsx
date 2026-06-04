@@ -47,8 +47,19 @@ import { useMemo } from "react";
 import { Upload, FileSpreadsheet } from "lucide-react";
 import * as XLSX from 'xlsx';
 
+interface LessonReportProps {
+  embedded?: boolean;
+  lessonId?: string;
+  scheduleId?: string;
+  courseInstanceId?: string;
+  editReportId?: string;
+  instructorId?: string;
+  selectedDate?: string;
+  onSuccess?: () => void;
+  onCancel?: () => void;
+}
 
-const LessonReport = () => {
+const LessonReport = (props: LessonReportProps = {}) => {
   const fileInputRef = useRef(null);
   const [files, setFiles] = useState([]);
   const [lessonTitle, setLessonTitle] = useState("");
@@ -64,13 +75,15 @@ const LessonReport = () => {
   const [courseInstanceId, setCourseInstanceId] = useState(null);
   const [expandedRows, setExpandedRows] = useState(new Set());
 
-  const { id } = useParams();
+  const { id: routeLessonId } = useParams();
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
-  const scheduleId = queryParams.get("scheduleId");
-  const courseInstanceIdFromUrl = queryParams.get("courseInstanceId");
-  const editReportId = queryParams.get("editReportId");
-  const instructorIdFromUrl = queryParams.get("instructorId");
+  const id = props.lessonId ?? routeLessonId;
+  const scheduleId = props.scheduleId ?? queryParams.get("scheduleId");
+  const courseInstanceIdFromUrl = props.courseInstanceId ?? queryParams.get("courseInstanceId");
+  const editReportId = props.editReportId ?? queryParams.get("editReportId");
+  const instructorIdFromUrl = props.instructorId ?? queryParams.get("instructorId");
+  const isEmbedded = props.embedded ?? false;
   const [lesson, setLesson] = useState(null);
   const [lessonTasks, setLessonTasks] = useState([]);
   const [checkedTasks, setCheckedTasks] = useState([]);
@@ -122,7 +135,7 @@ const [institutions, setInstitutions] = useState<{id: string, name: string}[]>([
   const [filteredReports, setFilteredReports] = useState([]);
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const navigate = useNavigate();
-  const selectedDate = location.state?.selectedDate; // התאריך שנשלח מהיומן
+  const selectedDate = props.selectedDate ?? location.state?.selectedDate; // התאריך שנשלח מהיומן
 
 
 
@@ -1679,9 +1692,13 @@ if (isCompleted && checkedTasks.length < lessonTasks.length) {
       prev.map((student) => ({ ...student, isPresent: false, isNew: false }))
     );
     if (fileInputRef.current) fileInputRef.current.value = "";
-    navigate('/calendar', { 
-      state: { selectedDate: location.state?.selectedDate || new Date().toISOString() }
-    });
+    if (isEmbedded) {
+      props.onSuccess?.();
+    } else {
+      navigate('/calendar', { 
+        state: { selectedDate: location.state?.selectedDate || new Date().toISOString() }
+      });
+    }
   } catch (err) {
     toast({
       title: "שגיאה",
@@ -1807,12 +1824,31 @@ const clearAllFilters = () => {
 
 
   return (
-    <div className="min-h-screen bg-background p-6">
+    <div className={isEmbedded ? "bg-gray-50 py-3" : "min-h-screen bg-background p-6"}>
+      {!isEmbedded && (
       <div className="md:hidden">
         <MobileNavigation />
       </div>
-<div className="w-full px-4 my-8  xl:max-w-[98rem] md:max-w-[125rem] xl:mx-auto">  
-       {(isInstructor || (isAdminOrManager && id)) ?  (
+      )}
+<div className={isEmbedded ? "w-full px-0" : "w-full px-4 my-8  xl:max-w-[98rem] md:max-w-[125rem] xl:mx-auto"}>
+       {isEmbedded && (
+          <div className="mb-3 flex items-center justify-between rounded-lg bg-white px-3 py-2 shadow-sm">
+            <div className="text-sm font-semibold text-gray-900">
+              {isEditMode ? "עריכת דיווח" : "דיווח שיעור"}
+              {lesson?.title ? ` - ${lesson.title}` : ""}
+            </div>
+            <button
+              type="button"
+              onClick={props.onCancel}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+              aria-label="סגור דיווח"
+              title="סגור"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+       {!isEmbedded && ((isInstructor || (isAdminOrManager && id)) ?  (
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             {isEditMode ? 'עריכת דיווח שיעור' : 'דיווח שיעור'} {lesson?.order_index+1} - {lesson?.title}
             {!scheduleId && !courseInstanceIdFromUrl && (
@@ -1825,19 +1861,19 @@ const clearAllFilters = () => {
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             כלל השיעורים שדווחו{" "}
           </h1>
-        )}
+        ))}
 
         {(isInstructor || (isAdminOrManager && id)) ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className={isEmbedded ? "grid grid-cols-1 gap-4" : "grid grid-cols-1 lg:grid-cols-2 gap-8"}>
             {/* Report Form */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
+            <Card className={isEmbedded ? "shadow-sm" : ""}>
+              <CardHeader className={isEmbedded ? "px-3 py-3" : ""}>
+                <CardTitle className={isEmbedded ? "flex items-center text-base" : "flex items-center"}>
                   <FileText className="h-5 w-5 ml-2" />
                   טופס דיווח
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className={isEmbedded ? "space-y-3 px-3 pb-3" : "space-y-4"}>
                 <div>
                   <Label htmlFor="lesson-title">נושא השיעור *</Label>
                   <Input
@@ -2252,27 +2288,32 @@ const clearAllFilters = () => {
             </Card>
 
             {/* File Upload */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
+            <Card className={isEmbedded ? "shadow-sm" : ""}>
+              <CardHeader className={isEmbedded ? "px-3 py-3" : ""}>
+                <CardTitle className="flex items-center text-base">
                   <Camera className="h-5 w-5 ml-2" />
                   העלאת קבצים
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div
-                  className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-gray-400"
-                  onClick={handleClick}
+              <CardContent className={isEmbedded ? "space-y-3 px-3 pb-3" : "space-y-3"}>
+                <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3">
+                  <button
+                    type="button"
+                    onClick={handleClick}
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-700 transition-colors hover:bg-blue-100"
+                    aria-label="הוסף קובץ"
+                    title="הוסף קובץ"
+                  >
+                    <Plus className="h-5 w-5" />
+                  </button>
+                  <div
+                    className="flex min-h-11 flex-1 cursor-pointer items-center rounded-md border border-dashed border-gray-200 px-3 text-sm text-gray-500 hover:border-gray-300"
+                    onClick={handleClick}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={handleDrop}
                 >
-                  <Camera className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500 mb-4">
-                    גרור קבצים לכאן או לחץ להעלאה
-                  </p>
-                  <Button variant="outline" type="button">
-                    בחר קבצים
-                  </Button>
+                    לחץ או גרור קבצים לכאן
+                  </div>
                   <input
                     type="file"
                     multiple
@@ -2284,15 +2325,12 @@ const clearAllFilters = () => {
                 </div>
 
                 {files.length > 0 && (
-                  <div className="bg-gray-100 p-3 rounded-lg space-y-2">
-                    <h4 className="text-sm font-semibold text-right">
-                      קבצים שנבחרו:
-                    </h4>
+                  <div className="bg-gray-50 p-3 rounded-lg space-y-2">
                     <ul className="text-sm text-gray-700 space-y-1">
                       {files.map((file, index) => (
                         <li
                           key={index}
-                          className="flex justify-between items-center"
+                          className="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1"
                         >
                           <span className="truncate">{file.name}</span>
                           <Button

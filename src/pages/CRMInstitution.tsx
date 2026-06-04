@@ -1458,7 +1458,31 @@ function replaceVariables(text: string, contact: Contact, institutionName: strin
 
 // SendWhatsApp Modal
 interface MessageTemplate { id: string; name: string; channel: string; body: string; subject: string | null; variables: string[] | null; attachments?: MessageAttachment[] | null }
-interface SendWhatsAppModalProps { contacts: Contact[]; institutionName: string; institutionId: string; onClose: () => void; onSent: (communication: Communication) => void; }
+type ManualSendLogResult = { activity: Activity | null; communication: Communication | null };
+
+async function fetchManualSendLogResult(ghlResult: any): Promise<ManualSendLogResult> {
+  const activityId = typeof ghlResult?.data?.activity_id === 'string' ? ghlResult.data.activity_id : null;
+  const communicationId = typeof ghlResult?.data?.communication_id === 'string' ? ghlResult.data.communication_id : null;
+
+  const [activityRes, communicationRes] = await Promise.all([
+    activityId
+      ? supabase.from('crm_activities').select('*').eq('id', activityId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    communicationId
+      ? supabase.from('crm_communications').select('*').eq('id', communicationId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  if (activityRes.error) console.warn('[CRMInstitution] Failed to fetch sent activity:', activityRes.error.message);
+  if (communicationRes.error) console.warn('[CRMInstitution] Failed to fetch sent communication:', communicationRes.error.message);
+
+  return {
+    activity: activityRes.data ? activityRes.data as Activity : null,
+    communication: communicationRes.data ? communicationRes.data as Communication : null,
+  };
+}
+
+interface SendWhatsAppModalProps { contacts: Contact[]; institutionName: string; institutionId: string; onClose: () => void; onSent: (result: ManualSendLogResult) => void; }
 const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, onSent }: SendWhatsAppModalProps) => {
   const [contactId, setContactId] = useState(contacts[0]?.id ?? '');
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
@@ -1508,7 +1532,7 @@ const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, 
     try {
       const finalMessage = preview;
       const { data: { user } } = await supabase.auth.getUser();
-      const result = await callGHL('send_whatsapp', {
+      const ghlResult = await callGHL('send_whatsapp', {
         phone: selectedContact.phone,
         message: finalMessage,
         contactName: selectedContact.name,
@@ -1517,10 +1541,8 @@ const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, 
         contact_id: contactId || null,
         user_id: user?.id ?? null,
         template_id: templateId || null,
-        require_communication_log: true,
       });
-      const communicationId = getGhlCommunicationId(result);
-      if (communicationId) onSent(await fetchCommunicationById(communicationId));
+      onSent(await fetchManualSendLogResult(ghlResult));
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'שגיאה');
@@ -1567,7 +1589,7 @@ const SendWhatsAppModal = ({ contacts, institutionName, institutionId, onClose, 
 };
 
 // SendEmail Modal
-interface SendEmailModalProps { contacts: Contact[]; institutionName: string; institutionId: string; onClose: () => void; onSent: (communication: Communication) => void; }
+interface SendEmailModalProps { contacts: Contact[]; institutionName: string; institutionId: string; onClose: () => void; onSent: (result: ManualSendLogResult) => void; }
 const SendEmailModal = ({ contacts, institutionName, institutionId, onClose, onSent }: SendEmailModalProps) => {
   const [contactId, setContactId] = useState(contacts[0]?.id ?? '');
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
@@ -1610,7 +1632,7 @@ const SendEmailModal = ({ contacts, institutionName, institutionId, onClose, onS
       const finalBody = replaceVariables(replaceVars(body, vars), selectedContact, institutionName, senderName);
       const finalSubject = replaceVariables(replaceVars(subject || '(ללא נושא)', vars), selectedContact, institutionName, senderName);
       const { data: { user } } = await supabase.auth.getUser();
-      const result = await callGHL('send_email', {
+      const ghlResult = await callGHL('send_email', {
         email: selectedContact.email,
         subject: finalSubject,
         body: finalBody,
@@ -1619,10 +1641,8 @@ const SendEmailModal = ({ contacts, institutionName, institutionId, onClose, onS
         contact_id: contactId || null,
         user_id: user?.id ?? null,
         template_id: templateId || null,
-        require_communication_log: true,
       });
-      const communicationId = getGhlCommunicationId(result);
-      if (communicationId) onSent(await fetchCommunicationById(communicationId));
+      onSent(await fetchManualSendLogResult(ghlResult));
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'שגיאה');
@@ -1808,8 +1828,16 @@ const CRMInstitution = () => {
         setEditActivity(null);
       }} />}
       {showEdit && <EditInstitutionModal institution={institution} pipelineStageNames={pipelineStageNames} onClose={() => setShowEdit(false)} onSaved={patch => { setInstitution(p => p ? { ...p, ...patch } : p); setShowEdit(false); }} />}
-      {showWhatsApp && id && <SendWhatsAppModal contacts={contacts} institutionName={institution.name} institutionId={id} onClose={() => setShowWhatsApp(false)} onSent={communication => { setCommunications(p => [communication, ...p]); setShowWhatsApp(false); }} />}
-      {showEmail && id && <SendEmailModal contacts={contacts} institutionName={institution.name} institutionId={id} onClose={() => setShowEmail(false)} onSent={communication => { setCommunications(p => [communication, ...p]); setShowEmail(false); }} />}
+      {showWhatsApp && id && <SendWhatsAppModal contacts={contacts} institutionName={institution.name} institutionId={id} onClose={() => setShowWhatsApp(false)} onSent={({ activity, communication }) => {
+        if (activity) setActivities(p => [activity, ...p]);
+        if (communication) setCommunications(p => [communication, ...p]);
+        setShowWhatsApp(false);
+      }} />}
+      {showEmail && id && <SendEmailModal contacts={contacts} institutionName={institution.name} institutionId={id} onClose={() => setShowEmail(false)} onSent={({ activity, communication }) => {
+        if (activity) setActivities(p => [activity, ...p]);
+        if (communication) setCommunications(p => [communication, ...p]);
+        setShowEmail(false);
+      }} />}
 
       {/* Header card */}
       <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: '14px 24px 0', flexShrink: 0 }}>

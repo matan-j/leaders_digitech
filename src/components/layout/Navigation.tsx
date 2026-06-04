@@ -9,6 +9,7 @@ import Profile from '@/pages/Profile';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { BrandLogo } from '@/components/layout/BrandLogo';
+import { useFeatureSettings } from '@/hooks/useFeatureSettings';
 
 interface CRMNotification {
   id: string; title: string; body: string | null;
@@ -92,6 +93,7 @@ const NotificationBell = ({ userId }: { userId: string }) => {
 
 const Navigation = () => {
   const { user, signOut } = useAuth();
+  const { rewardsPageEnabled } = useFeatureSettings();
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
  const [profile, setProfile] = useState<Profile | null>(null);
@@ -109,7 +111,7 @@ const navigationItems = [
   isCrmUser && { path: '/crm', label: 'CRM', icon: Briefcase },
   (isCrmUser || isAdminOrManager) && { path: '/crm/products', label: 'קטלוג מוצרים', icon: Package },
   { path: '/tasks', label: 'פרויקטים', icon: FolderKanban },
-  { path: '/rewards', label: 'תגמולים', icon: BarChart3 },
+  rewardsPageEnabled && { path: '/rewards', label: 'תגמולים', icon: BarChart3 },
   { path: '/profile', label: 'פרופיל', icon: User },
    isAdminOrManager && { path: '/AdminSettings', label: 'הגדרות מנהל ', icon: Settings2Icon },
 

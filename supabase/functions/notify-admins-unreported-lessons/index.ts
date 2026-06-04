@@ -7,7 +7,13 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY')!
-console.log('[debug] BREVO_API_KEY loaded:', BREVO_API_KEY ? `YES (length: ${BREVO_API_KEY.length}, first 8 chars: ${BREVO_API_KEY.substring(0, 8)})` : 'MISSING')
+const BREVO_SENDER_EMAIL = Deno.env.get('BREVO_SENDER_EMAIL')
+const BREVO_SENDER_NAME = Deno.env.get('BREVO_SENDER_NAME') ?? 'Leaders Digitech'
+const BREVO_REPLY_TO_EMAIL = Deno.env.get('BREVO_REPLY_TO_EMAIL')
+
+if (!BREVO_SENDER_EMAIL) {
+  throw new Error('Missing required Edge Function secret: BREVO_SENDER_EMAIL.')
+}
 
 Deno.serve(async (req) => {
   console.log(`=== UNREPORTED LESSONS NOTIFICATION START ===`)
@@ -147,7 +153,8 @@ Deno.serve(async (req) => {
             'content-type': 'application/json',
           },
           body: JSON.stringify({
-            sender: { name: 'Leaders Admin System', email: 'fransesguy1@gmail.com' },
+            sender: { name: BREVO_SENDER_NAME, email: BREVO_SENDER_EMAIL },
+            ...(BREVO_REPLY_TO_EMAIL ? { replyTo: { email: BREVO_REPLY_TO_EMAIL, name: BREVO_SENDER_NAME } } : {}),
             to: [{ email, name: 'Admin' }],
             subject,
             textContent,

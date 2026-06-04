@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { 
   Dialog,
   DialogContent,
@@ -50,6 +51,8 @@ import {
 } from 'lucide-react';
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useQueryClient } from "@tanstack/react-query";
+import { FEATURE_SETTINGS_QUERY_KEY } from "@/hooks/useFeatureSettings";
 import { toast } from "@/components/ui/use-toast";
 import MobileNavigation from "@/components/layout/MobileNavigation";
 import AddInstitutionModal from "@/components/institutions/AddInstitutionModal";
@@ -69,6 +72,7 @@ interface SystemDefaults {
   id?: string;
   default_lesson_duration: number;
   default_task_duration: number;
+  rewards_page_enabled: boolean;
 
 }
 
@@ -433,6 +437,7 @@ const TelegramReportTestCard = () => {
 
 const AdminSettings = () => {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('defaults');
   const [loading, setLoading] = useState(false);
   const [savingDefaults, setSavingDefaults] = useState(false);
@@ -442,6 +447,7 @@ const AdminSettings = () => {
   const [defaults, setDefaults] = useState<SystemDefaults>({
     default_lesson_duration: 45,
     default_task_duration: 15,
+    rewards_page_enabled: true,
    
   });
   const [newBlockedDate, setNewBlockedDate] = useState({ 
@@ -574,7 +580,8 @@ const handleUpdateInstructor = async () => {
           .insert([{
             default_lesson_duration: 45,
             default_task_duration: 15,
-            default_break_duration: 10
+            default_break_duration: 10,
+            rewards_page_enabled: true
           }])
           .select()
           .single();
@@ -601,6 +608,7 @@ const handleUpdateInstructor = async () => {
         .eq('id', defaults.id); // Assuming an ID exists
       
       if (!error) {
+        queryClient.invalidateQueries({ queryKey: FEATURE_SETTINGS_QUERY_KEY });
         toast({
           title: "✅ ההגדרות עודכנו בהצלחה",
           description: "ברירות המחדל החדשות ישמשו בהקצאות חדשות"
@@ -1272,6 +1280,29 @@ const getRoleBadge = (role: string) => {
                   
            
                 </div>
+
+                {isAdmin && (
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <Switch
+                        id="rewards-page-enabled"
+                        checked={defaults.rewards_page_enabled ?? true}
+                        onCheckedChange={(checked) => setDefaults({
+                          ...defaults,
+                          rewards_page_enabled: checked
+                        })}
+                      />
+                      <div className="space-y-1 text-right">
+                        <Label htmlFor="rewards-page-enabled" className="text-base font-medium">
+                          עמוד תגמולים
+                        </Label>
+                        <p className="text-sm text-gray-500">
+                          הצגה וגישה לעמוד התגמולים במערכת
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
                 <div className="flex justify-end">
                   <Button

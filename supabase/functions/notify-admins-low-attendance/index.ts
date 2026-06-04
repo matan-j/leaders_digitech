@@ -11,7 +11,13 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
 const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY')!
+const BREVO_SENDER_EMAIL = Deno.env.get('BREVO_SENDER_EMAIL')
+const BREVO_SENDER_NAME = Deno.env.get('BREVO_SENDER_NAME') ?? 'Leaders Digitech'
+const BREVO_REPLY_TO_EMAIL = Deno.env.get('BREVO_REPLY_TO_EMAIL')
 
+if (!BREVO_SENDER_EMAIL) {
+  throw new Error('Missing required Edge Function secret: BREVO_SENDER_EMAIL.')
+}
 
 
 Deno.serve(async (req) => {
@@ -58,11 +64,6 @@ Deno.serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     console.log('✅ Supabase client created');
 
-    // // For testing - replace with your actual email
-    // console.log('📧 Using test email for debugging');
-    // const adminEmails = ['fransesguy1@gmail.com'];
-    
-    
     // Original code for production - uncomment when ready
     console.log('📞 Fetching admin emails from get_admin_emails()');
     const { data: adminEmailsData, error: adminError } = await supabase
@@ -125,9 +126,10 @@ Deno.serve(async (req) => {
 
         const emailPayload = {
           sender: {
-            name: "Leaders Admin System",
-            email: "fransesguy1@gmail.com"
+            name: BREVO_SENDER_NAME,
+            email: BREVO_SENDER_EMAIL
           },
+          ...(BREVO_REPLY_TO_EMAIL ? { replyTo: { email: BREVO_REPLY_TO_EMAIL, name: BREVO_SENDER_NAME } } : {}),
           to: [{ email, name: "Admin" }],
           subject,
           textContent

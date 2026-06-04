@@ -32,6 +32,10 @@ function normalizePhone(raw: string): string {
   return raw.replace(/[^0-9]/g, '')
 }
 
+function getPhoneFromChatId(chatId: string): string {
+  return chatId.replace(/@c\.us$/i, '')
+}
+
 function israeliVariants(phone: string): string[] {
   const variants = [phone]
   if (phone.startsWith('972')) {
@@ -143,6 +147,16 @@ function getProviderMessageId(body: Record<string, unknown>): string | null {
   return null
 }
 
+function getTextMessage(messageData: Record<string, unknown> | undefined): string {
+  const textMessageData = messageData?.textMessageData as Record<string, unknown> | undefined
+  if (typeof textMessageData?.textMessage === 'string') return textMessageData.textMessage
+
+  const extendedTextMessageData = messageData?.extendedTextMessageData as Record<string, unknown> | undefined
+  if (typeof extendedTextMessageData?.text === 'string') return extendedTextMessageData.text
+
+  return ''
+}
+
 async function logUnmatchedInboundCommunication(params: {
   supabase: ReturnType<typeof createClient>
   textMessage: string
@@ -167,6 +181,35 @@ async function logUnmatchedInboundCommunication(params: {
 
   if (error) {
     console.error('[crm-whatsapp-webhook] unmatched communication insert error:', error.message)
+  }
+}
+
+async function logUnmatchedOutboundCommunication(params: {
+  supabase: ReturnType<typeof createClient>
+  textMessage: string
+  senderPhone: string | null
+  recipientPhone: string
+  occurredAt: string
+  providerMessageId: string | null
+  providerPayload: Record<string, unknown>
+}) {
+  const { error } = await params.supabase.from('crm_unmatched_communications').insert({
+    channel: 'whatsapp',
+    direction: 'outbound',
+    body_text: params.textMessage,
+    sender_name: 'Leaders CRM',
+    sender_address: params.senderPhone,
+    recipient_address: params.recipientPhone,
+    provider: 'green_api',
+    provider_message_id: params.providerMessageId,
+    provider_status: 'sent',
+    provider_payload: params.providerPayload,
+    status: 'unmatched',
+    occurred_at: params.occurredAt,
+  })
+
+  if (error) {
+    console.error('[crm-whatsapp-webhook] unmatched outbound communication insert error:', error.message)
   }
 }
 
@@ -202,6 +245,44 @@ async function logInboundCommunication(params: {
   if (error) {
     console.error('[crm-whatsapp-webhook] communication insert error:', error.message)
   }
+}
+
+async function logOutboundCommunication(params: {
+  supabase: ReturnType<typeof createClient>
+  institution_id: string
+  contact_id: string | null
+  textMessage: string
+  senderPhone: string | null
+  recipientPhone: string
+  occurredAt: string
+  providerMessageId: string | null
+  providerPayload: Record<string, unknown>
+}): Promise<string | null> {
+  const { data, error } = await params.supabase.from('crm_communications').insert({
+    institution_id: params.institution_id,
+    contact_id: params.contact_id,
+    activity_id: null,
+    channel: 'whatsapp',
+    direction: 'outbound',
+    body_text: params.textMessage,
+    sender_name: 'Leaders CRM',
+    sender_address: params.senderPhone,
+    recipient_address: params.recipientPhone,
+    provider: 'green_api',
+    provider_message_id: params.providerMessageId,
+    provider_status: 'sent',
+    provider_payload: params.providerPayload,
+    status: 'sent',
+    sent_at: params.occurredAt,
+    occurred_at: params.occurredAt,
+  }).select('id').single()
+
+  if (error) {
+    console.error('[crm-whatsapp-webhook] outbound communication insert error:', error.message)
+    return null
+  }
+
+  return data?.id ?? null
 }
 
 async function logInboundActivity(params: {
@@ -243,27 +324,40 @@ Deno.serve(async (req) => {
 
     const body = await req.json() as Record<string, unknown>
 
-    if (body.typeWebhook !== 'incomingMessageReceived') {
+    if (
+      body.typeWebhook !== 'incomingMessageReceived' &&
+      body.typeWebhook !== 'outgoingMessageReceived'
+    ) {
       return ok200(`Ignored webhook type: ${body.typeWebhook}`)
+    }
+
+    const isOutbound = body.typeWebhook === 'outgoingMessageReceived'
+    if (isOutbound) {
+      console.log('[crm-whatsapp-webhook] Received outgoingMessageReceived')
     }
 
     const messageData = body.messageData as Record<string, unknown> | undefined
     const messageType = messageData?.typeMessage
-    if (messageType !== 'textMessage') {
+    if (messageType !== 'textMessage' && messageType !== 'quotedMessage') {
       return ok200(`Ignored message type: ${messageType}`)
     }
 
-    const textMessageData = messageData?.textMessageData as Record<string, unknown> | undefined
-    const textMessage = typeof textMessageData?.textMessage === 'string' ? textMessageData.textMessage : ''
+    const textMessage = getTextMessage(messageData)
     if (!textMessage) {
       return ok200('Empty textMessage body')
     }
 
     const senderData = body.senderData as Record<string, unknown> | undefined
     const chatId = typeof senderData?.chatId === 'string' ? senderData.chatId : ''
-    const rawPhone = chatId.replace('@c.us', '')
+    const rawPhone = getPhoneFromChatId(chatId)
     if (!rawPhone) {
       return ok200('No chatId in senderData')
+    }
+    const senderChatId = typeof senderData?.sender === 'string' ? senderData.sender : ''
+    const senderPhone = senderChatId ? getPhoneFromChatId(senderChatId) : null
+
+    if (isOutbound) {
+      console.log(`[crm-whatsapp-webhook] Parsed outbound remote phone: ${rawPhone}`)
     }
 
     const occurredAt = typeof body.timestamp === 'number'
@@ -283,6 +377,43 @@ Deno.serve(async (req) => {
     )
     if (alreadyLogged) {
       return ok200(`Duplicate message skipped for provider message ${providerMessageId ?? messagePrefix}`)
+    }
+
+    if (isOutbound) {
+      if (!match) {
+        await logUnmatchedOutboundCommunication({
+          supabase,
+          textMessage,
+          senderPhone,
+          recipientPhone: rawPhone,
+          occurredAt,
+          providerMessageId,
+          providerPayload: body,
+        })
+        console.log(`[crm-whatsapp-webhook] Stored unmatched outbound message for phone: ${rawPhone}`)
+        return ok200()
+      }
+
+      const communicationId = await logOutboundCommunication({
+        supabase,
+        institution_id: match.institution_id,
+        contact_id: match.contact_id,
+        textMessage,
+        senderPhone,
+        recipientPhone: rawPhone,
+        occurredAt,
+        providerMessageId,
+        providerPayload: body,
+      })
+
+      console.log(
+        `[crm-whatsapp-webhook] Logged outbound message for institution ${match.institution_id}`,
+        `contact=${match.contact_id ?? 'none'}`,
+        `phone=${rawPhone}`,
+        `communication=${communicationId ?? 'none'}`,
+      )
+
+      return ok200()
     }
 
     if (!match) {

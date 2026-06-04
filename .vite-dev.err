@@ -1,0 +1,32 @@
+Browserslist: browsers data (caniuse-lite) is 19 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+npm error code EPERM
+npm error syscall kill
+npm error path C:\dev\leaders_digitech
+npm error errno -4048
+npm error Error: kill EPERM
+npm error     at ChildProcess.kill (node:internal/child_process:511:26)
+npm error     at process.handleSignal (C:\Program Files\nodejs\node_modules\npm\node_modules\@npmcli\run-script\lib\signal-manager.js:14:10)
+npm error     at process.emit (node:events:518:28) {
+npm error   errno: -4048,
+npm error   code: 'EPERM',
+npm error   syscall: 'kill',
+npm error   cmd: 'C:\\WINDOWS\\system32\\cmd.exe',
+npm error   args: [ '/d', '/s', '/c', 'vite --host 127.0.0.1 --port 5173' ],
+npm error   stdout: null,
+npm error   stderr: null,
+npm error   event: 'dev',
+npm error   script: 'vite',
+npm error   pkgid: 'vite_react_shadcn_ts@0.0.0',
+npm error   path: 'C:\\dev\\leaders_digitech'
+npm error }
+npm error
+npm error The operation was rejected by your operating system.
+npm error It's possible that the file was already in use (by a text editor or antivirus),
+npm error or that you lack permissions to access it.
+npm error
+npm error If you believe this might be a permissions issue, please double-check the
+npm error permissions of the file and its containing directories, or try running
+npm error the command again as root/Administrator.
+npm error A complete log of this run can be found in: C:\Users\alonp\AppData\Local\npm-cache\_logs\2026-05-09T22_38_03_838Z-debug-0.log

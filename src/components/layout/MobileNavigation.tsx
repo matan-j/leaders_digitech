@@ -3,9 +3,11 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { BookOpen, Calendar, FileText, Users, BarChart3, User, Award, Briefcase } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useFeatureSettings } from '@/hooks/useFeatureSettings';
 
 const MobileNavigation = () => {
   const { user } = useAuth();
+  const { rewardsPageEnabled } = useFeatureSettings();
 const isAdminOrManager = ['admin', 'pedagogical_manager'].includes(user?.user_metadata?.role);
 const isAdmin = ['admin'].includes(user?.user_metadata?.role);
 const isCrmUser = ['admin', 'sales_rep'].includes(user?.user_metadata?.role);
@@ -18,7 +20,7 @@ const isCrmUser = ['admin', 'sales_rep'].includes(user?.user_metadata?.role);
    { path: '/course-assignments', label: 'הקצאות', icon: Users } ,
     ...(isAdmin ? [{ path: '/reports', label: 'דוחות', icon: BarChart3 }] : []),
     ...(isCrmUser ? [{ path: '/crm', label: 'CRM', icon: Briefcase }] : []),
-    { path: '/rewards', label: 'תגמולים', icon: Award },
+    ...(rewardsPageEnabled ? [{ path: '/rewards', label: 'תגמולים', icon: Award }] : []),
     { path: '/profile', label: 'פרופיל', icon: User },
   ];
 

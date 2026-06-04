@@ -2,9 +2,16 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-const BREVO_API_KEY = process.env.VITE_BREVO_API_KEY;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY');
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+const BREVO_SENDER_EMAIL = Deno.env.get('BREVO_SENDER_EMAIL');
+const BREVO_SENDER_NAME = Deno.env.get('BREVO_SENDER_NAME') ?? 'Leaders Digitech';
+const BREVO_REPLY_TO_EMAIL = Deno.env.get('BREVO_REPLY_TO_EMAIL');
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !BREVO_API_KEY || !BREVO_SENDER_EMAIL) {
+  throw new Error('Missing required Edge Function secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, BREVO_API_KEY, and BREVO_SENDER_EMAIL.');
+}
 
 
 
@@ -119,7 +126,8 @@ Deno.serve(async (req) => {
         console.log(`📮 Sending email to: ${adminEmail}`);
         
         const emailPayload = {
-          sender: { name: "Leaders Admin System", email: "fransesguy1@gmail.com" },
+          sender: { name: BREVO_SENDER_NAME, email: BREVO_SENDER_EMAIL },
+          ...(BREVO_REPLY_TO_EMAIL ? { replyTo: { email: BREVO_REPLY_TO_EMAIL, name: BREVO_SENDER_NAME } } : {}),
           to: [{ email: adminEmail, name: "Admin" }],
           subject: subject,
           htmlContent: htmlContent

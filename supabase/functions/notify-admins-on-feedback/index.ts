@@ -8,8 +8,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-export const SUPABASE_URL = process.env.VITE_SUPABASE_URL
-export const SUPABASE_PUBLISHABLE_KEY =   process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+export const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
+export const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+export const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY')
+export const BREVO_SENDER_EMAIL = Deno.env.get('BREVO_SENDER_EMAIL')
+export const BREVO_SENDER_NAME = Deno.env.get('BREVO_SENDER_NAME') ?? 'Leaders Digitech'
+export const BREVO_REPLY_TO_EMAIL = Deno.env.get('BREVO_REPLY_TO_EMAIL')
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !BREVO_API_KEY || !BREVO_SENDER_EMAIL) {
+  throw new Error('Missing required Edge Function secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, BREVO_API_KEY, and BREVO_SENDER_EMAIL.')
+}
 
 
 interface FeedbackPayload {
@@ -48,7 +56,7 @@ Deno.serve(async (req) => {
     // Create Supabase client
     const supabaseAdmin = createClient(
       SUPABASE_URL,
-      SUPABASE_PUBLISHABLE_KEY
+      SUPABASE_SERVICE_ROLE_KEY
     );
     console.log('✅ Supabase client created');
 
@@ -115,17 +123,16 @@ Deno.serve(async (req) => {
     const emailResults: any = [];
     
     // Brevo API key - you'll need to get this from brevo.com (free account)
-    const BREVO_API_KEY = process.env.VITE_BREVO_API_KEY;
-    
     for (const email of adminEmails) {
       try {
         console.log(`📧 Sending email to: ${email}`);
         
         const emailPayload = {
           sender: {
-            name: "Leaders Admin System",
-            email: "fransesguy1@gmail.com"  // Your email as sender
+            name: BREVO_SENDER_NAME,
+            email: BREVO_SENDER_EMAIL
           },
+          ...(BREVO_REPLY_TO_EMAIL ? { replyTo: { email: BREVO_REPLY_TO_EMAIL, name: BREVO_SENDER_NAME } } : {}),
           to: [
             {
               email: email,

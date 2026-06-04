@@ -1,19 +1,28 @@
 // Calendar.tsx - Progressive loading version
 import  { useEffect, useState, useCallback, useRef } from "react";
-import { Calendar as CalendarIcon, BarChart3 } from "lucide-react";
+import { Calendar as CalendarIcon } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import MobileNavigation from "@/components/layout/MobileNavigation";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { WeeklyCalendar } from "@/components/ui/WeeklyCalendar";
 import { fetchSchedulesByDateRange } from "@/utils/scheduleUtils";
 import { filterLessons } from "@/utils/calendarFilters";
 
+type InlineLessonReportContext = {
+  inlineKey?: string;
+  lessonId?: string;
+  scheduleId?: string;
+  courseInstanceId?: string;
+  editReportId?: string;
+  instructorId?: string;
+  selectedDate?: string;
+};
+
 const Calendar = () => {
   const { user } = useAuth();
   const location = useLocation();
-  const nav = useNavigate();
 
   const role = user?.user_metadata?.role;
   const isAdminOrManager = ['admin', 'pedagogical_manager'].includes(role);
@@ -28,6 +37,7 @@ const Calendar = () => {
 
   const [lessons, setLessons] = useState<any[]>([]);
   const [loadingState, setLoadingState] = useState<'initial' | 'loading-more' | 'complete'>('initial');
+  const [inlineReportContext, setInlineReportContext] = useState<InlineLessonReportContext | null>(null);
   const loadedRangeRef = useRef<{ start: Date; end: Date } | null>(null);
   const prevMonthRef = useRef<number | null>(null);
 
@@ -128,6 +138,18 @@ const Calendar = () => {
     : [];
 
   const filteredLessons = filterLessons(lessons, selectedInstructor, selectedCourse, selectedInstitution);
+
+  const handleOpenLessonReport = useCallback((context: InlineLessonReportContext) => {
+    setInlineReportContext((current) =>
+      current?.inlineKey && current.inlineKey === context.inlineKey ? null : context
+    );
+  }, []);
+
+  const handleReportSaved = useCallback(() => {
+    setInlineReportContext(null);
+    setLoadingState('initial');
+    fetchLessonsData(1, selectedDate);
+  }, [fetchLessonsData, selectedDate]);
 
   // Auto-refresh calendar data every 2 minutes
   useEffect(() => {
@@ -247,6 +269,10 @@ const Calendar = () => {
                   selectedDate={selectedDate}
                   setSelectedDate={setSelectedDate}
                   lessons={filteredLessons}
+                  onOpenLessonReport={handleOpenLessonReport}
+                  openLessonReportContext={inlineReportContext}
+                  onCloseLessonReport={() => setInlineReportContext(null)}
+                  onLessonReportSuccess={handleReportSaved}
                 />
               </div>
             </CardHeader>

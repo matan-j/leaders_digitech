@@ -2,9 +2,16 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 
-export const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-export const SUPABASE_PUBLISHABLE_KEY = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-export const BREVO_API_KEY = process.env.VITE_BREVO_API_KEY;
+export const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+export const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+export const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY');
+export const BREVO_SENDER_EMAIL = Deno.env.get('BREVO_SENDER_EMAIL');
+export const BREVO_SENDER_NAME = Deno.env.get('BREVO_SENDER_NAME') ?? 'Leaders Digitech';
+export const BREVO_REPLY_TO_EMAIL = Deno.env.get('BREVO_REPLY_TO_EMAIL');
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !BREVO_API_KEY || !BREVO_SENDER_EMAIL) {
+  throw new Error('Missing required Edge Function secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, BREVO_API_KEY, and BREVO_SENDER_EMAIL.');
+}
 
 Deno.serve(async (req) => {
   console.log(`=== INCOMPLETE TASKS NOTIFICATION START ===`);
@@ -49,7 +56,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     console.log('✅ Supabase client created');
 
     console.log('📞 Fetching admin emails from get_admin_emails()');
@@ -65,7 +72,6 @@ Deno.serve(async (req) => {
     }
 
     const adminEmails = adminEmailsData?.map((row: { email: string }) => row.email) || [];
-    // const adminEmails = ['fransesguy1@gmail.com']; // For testing
     
     console.log(`📬 Admin emails found: ${adminEmails.length}`, adminEmails);
     
@@ -303,9 +309,10 @@ const htmlContent = `
 
         const emailPayload = {
           sender: {
-            name: "Leaders Admin System",
-            email: "fransesguy1@gmail.com"
+            name: BREVO_SENDER_NAME,
+            email: BREVO_SENDER_EMAIL
           },
+          ...(BREVO_REPLY_TO_EMAIL ? { replyTo: { email: BREVO_REPLY_TO_EMAIL, name: BREVO_SENDER_NAME } } : {}),
           to: [{ email, name: "Admin" }],
           subject,
           textContent,

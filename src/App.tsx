@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Link, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import Navigation from "@/components/layout/Navigation";
@@ -25,8 +25,42 @@ import CRMInstitution from "./pages/CRMInstitution";
 import CRMInstructor from "./pages/CRMInstructor";
 import Products from "./pages/Products";
 import Tasks from "./pages/Tasks";
+import { useFeatureSettings } from "@/hooks/useFeatureSettings";
 
 const queryClient = new QueryClient();
+
+const RewardsFeatureGate = () => {
+  const { rewardsPageEnabled, isLoading } = useFeatureSettings();
+
+  if (isLoading) {
+    return (
+      <main className="p-6 text-center text-gray-600" dir="rtl">
+        טוען הגדרות...
+      </main>
+    );
+  }
+
+  if (!rewardsPageEnabled) {
+    return (
+      <main className="mx-auto max-w-2xl p-6 text-center" dir="rtl">
+        <div className="rounded-lg border border-gray-200 bg-white p-8 shadow-sm">
+          <h1 className="text-2xl font-bold text-gray-900">עמוד התגמולים אינו פעיל כרגע</h1>
+          <p className="mt-3 text-gray-600">
+            מנהל המערכת כיבה את מודול התגמולים. ניתן להמשיך לעבוד בשאר חלקי המערכת.
+          </p>
+          <Link
+            to="/"
+            className="mt-6 inline-flex rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            חזרה לדשבורד
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  return <Rewards />;
+};
 
 const App = () => (
 
@@ -116,7 +150,7 @@ const App = () => (
                    <ProtectedRoute>
                      <div className="min-h-screen">
                        <Navigation />
-                       <Rewards />
+                       <RewardsFeatureGate />
                      </div>
                    </ProtectedRoute>
                  } 

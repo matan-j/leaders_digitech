@@ -7,12 +7,36 @@ interface WeeklyCalendarProps {
   selectedDate: Date;
   setSelectedDate: (date: Date) => void;
   lessons: any[];
+  onOpenLessonReport?: (context: {
+    inlineKey?: string;
+    lessonId?: string;
+    scheduleId?: string;
+    courseInstanceId?: string;
+    editReportId?: string;
+    instructorId?: string;
+    selectedDate?: string;
+  }) => void;
+  openLessonReportContext?: {
+    inlineKey?: string;
+    lessonId?: string;
+    scheduleId?: string;
+    courseInstanceId?: string;
+    editReportId?: string;
+    instructorId?: string;
+    selectedDate?: string;
+  } | null;
+  onCloseLessonReport?: () => void;
+  onLessonReportSuccess?: () => void;
 }
 
 export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
   selectedDate,
   setSelectedDate,
   lessons,
+  onOpenLessonReport,
+  openLessonReportContext,
+  onCloseLessonReport,
+  onLessonReportSuccess,
 }) => {
   const filteredClasses = (lessons ?? []).filter((c) => {
     if (!c.scheduled_start) return true;
@@ -66,6 +90,10 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
           key={`schedule-list-${selectedDate.toISOString().split('T')[0]}-${uniqueClasses.length}`}
           lessons={uniqueClasses}
           selectedDate={selectedDate}
+          onOpenLessonReport={onOpenLessonReport}
+          openLessonReportContext={openLessonReportContext}
+          onCloseLessonReport={onCloseLessonReport}
+          onLessonReportSuccess={onLessonReportSuccess}
         />
       ) : (
         <div className="px-4 py-10 text-center text-gray-500">

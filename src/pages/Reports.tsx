@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import MobileNavigation from '@/components/layout/MobileNavigation';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Popover, PopoverContent } from '@/components/ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Label } from '@/components/ui/label';
 import { format, addMonths, startOfMonth, endOfMonth } from 'date-fns';
@@ -121,6 +121,10 @@ const Reports = () => {
   const [schedulesCache, setSchedulesCache] = useState<any>(null);
   const [salaryData, setSalaryData] = useState<SalaryRow[]>([]);
   const [salaryLoading, setSalaryLoading] = useState(false);
+  const [instructorOpen, setInstructorOpen] = useState(false);
+  const [instructorSearch, setInstructorSearch] = useState('');
+  const [institutionOpen, setInstitutionOpen] = useState(false);
+  const [institutionSearch, setInstitutionSearch] = useState('');
 
   // Helper function to calculate hours between two timestamps
   const calculateLessonHours = (scheduledStart: string, scheduledEnd: string): number => {
@@ -214,7 +218,12 @@ const Reports = () => {
         detailData: filteredInstructors
       };
     } else {
-      const filteredInstitutions = selectedInstitution === 'all' 
+      console.log('SELECTED MONTH KEY', selectedMonth);
+      console.log('MAP KEYS', Array.from(monthlyReports.keys()));
+      console.log('SELECTED MONTH DATA', selectedMonthData);
+      console.log('INSTITUTION DATA IN MAP', selectedMonthData?.institutionData?.length);
+
+      const filteredInstitutions = selectedInstitution === 'all'
         ? selectedMonthData.institutionData || []
         : (selectedMonthData.institutionData || []).filter(institution => institution.id === selectedInstitution);
 
@@ -307,15 +316,19 @@ const Reports = () => {
 
   // Load current month data immediately, then load others in background
   useEffect(() => {
+    console.log('EFFECT CHECK', { user: !!user, schedulesCache: !!schedulesCache, monthsList: monthsList?.length });
     if (!user || !schedulesCache) return;
+    console.log('LOAD EFFECT FIRED', reportType);
 
     const loadCurrentMonth = async () => {
+      console.log('LOAD MONTH CALLED', 'current');
       setLoading(true);
       try {
         const currentMonthData = monthsList.find(m => m.key === 'current');
         if (currentMonthData) {
           const monthData = await fetchMonthData(currentMonthData.startDate, currentMonthData.endDate, currentMonthData.key);
-          
+
+          console.log('SETTING MAP', currentMonthData.key, 'institutionData length:', monthData?.institutionData?.length);
           setMonthlyReports(prev => new Map(prev).set('current', {
             month: currentMonthData.label,
             monthKey: currentMonthData.key,
@@ -338,14 +351,17 @@ const Reports = () => {
   // Load other months in background
   useEffect(() => {
     if (!user || !schedulesCache || loading) return;
+    console.log('LOAD EFFECT FIRED', reportType);
 
     const loadOtherMonths = async () => {
       setBackgroundLoading(true);
       try {
         // Load other months one by one to avoid overwhelming the database
         for (const month of monthsList.filter(m => m.key !== 'current')) {
+          console.log('LOAD MONTH CALLED', month.key);
           const monthData = await fetchMonthData(month.startDate, month.endDate, month.key);
-          
+
+          console.log('SETTING MAP', month.key, 'institutionData length:', monthData?.institutionData?.length);
           setMonthlyReports(prev => new Map(prev).set(month.key, {
             month: month.label,
             monthKey: month.key,
@@ -372,6 +388,7 @@ const Reports = () => {
 
   // Load specific month data on demand
   const loadMonthOnDemand = useCallback(async (monthKey: string) => {
+    console.log('LOAD MONTH CALLED', monthKey);
     const month = monthsList.find(m => m.key === monthKey);
     if (!month || monthlyReports.has(monthKey)) return;
 
@@ -395,7 +412,8 @@ const Reports = () => {
 
     try {
       const monthData = await fetchMonthData(month.startDate, month.endDate, month.key);
-      
+
+      console.log('SETTING MAP', monthKey, 'institutionData length:', monthData?.institutionData?.length);
       setMonthlyReports(prev => new Map(prev).set(monthKey, {
         month: month.label,
         monthKey: month.key,
@@ -624,7 +642,7 @@ const Reports = () => {
             students (id),
             educational_institutions (name)
           ),
-          lesson_schedules (
+          lesson_schedules!inner (
             id,
             scheduled_start,
             scheduled_end,
@@ -636,8 +654,8 @@ const Reports = () => {
             )
           )
         `)
-        .gte('created_at', startDate.toISOString())
-        .lte('created_at', endDate.toISOString())
+        .gte('lesson_schedules.scheduled_start', startDate.toISOString())
+        .lte('lesson_schedules.scheduled_start', endDate.toISOString())
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -752,61 +770,85 @@ const Reports = () => {
   // Optimized institution data fetching
   const fetchInstitutionDataOptimized = async (startDate: Date, endDate: Date) => {
     try {
-      const { data: courseInstances, error } = await supabase
-        .from('course_instances')
+      const { data: reports, error } = await supabase
+        .from('lesson_reports')
         .select(`
           id,
-          price_for_customer,
-          price_for_instructor,
-          educational_institutions!inner (
+          lesson_title,
+          participants_count,
+          is_lesson_ok,
+          is_completed,
+          lessons_count,
+          created_at,
+          lesson_schedule_id,
+          lesson_schedules!inner (
             id,
-            name
-          ),
-          courses (
-            id,
-            name
-          ),
-          instructor:instructor_id (
-            id,
-            full_name
-          ),
-          students (
-            id,
-            full_name
-          ),
-          lesson_reports!inner (
-            id,
-            lesson_title,
-            participants_count,
-            is_lesson_ok,
-            is_completed,
-            created_at,
-            lesson_schedule_id,
-            lesson_attendance (
-              student_id,
-              attended,
+            scheduled_start,
+            course_instances!inner (
+              id,
+              price_for_customer,
+              educational_institutions!inner (
+                id,
+                name
+              ),
+              courses (
+                id,
+                name
+              ),
+              instructor:instructor_id (
+                id,
+                full_name
+              ),
               students (
                 id,
                 full_name
               )
-            ),
-            reported_lesson_instances (
-              lesson_number
             )
+          ),
+          lesson_attendance (
+            student_id,
+            attended,
+            students (
+              id,
+              full_name
+            )
+          ),
+          reported_lesson_instances (
+            lesson_number
           )
         `)
-        .gte('lesson_reports.created_at', startDate.toISOString())
-        .lte('lesson_reports.created_at', endDate.toISOString());
+        .gte('lesson_schedules.scheduled_start', startDate.toISOString())
+        .lte('lesson_schedules.scheduled_start', endDate.toISOString());
 
       if (error) throw error;
 
+      console.log('FETCH PARAMS', startDate, endDate);
+      console.log('RAW LESSON REPORTS', reports?.length, JSON.stringify(reports?.[0]).slice(0, 300));
+
       const institutionMap = new Map<string, InstitutionReport>();
+      const courseMap = new Map<string, CourseDetail>();
 
-      for (const instance of courseInstances || []) {
-        if (!instance.educational_institutions) continue;
+      for (const report of reports || []) {
+        if (reports.length > 0 && reports.indexOf(report) === 0) {
+          console.log('FIRST REPORT', JSON.stringify({
+            schedule: report.lesson_schedules,
+            courseInstance: (report.lesson_schedules as any)?.course_instances,
+            price: (report.lesson_schedules as any)?.course_instances?.price_for_customer
+          }));
+        }
 
-        const institutionId = instance.educational_institutions.id;
-        const institutionName = instance.educational_institutions.name;
+        const schedule = report.lesson_schedules;
+        if (!schedule) continue;
+
+        const courseInstance = (schedule as any).course_instances;
+        if (!courseInstance) continue;
+
+        const institution = courseInstance.educational_institutions;
+        if (!institution) continue;
+
+        const institutionId = institution.id;
+        const institutionName = institution.name;
+        const courseInstanceId = courseInstance.id;
 
         if (!institutionMap.has(institutionId)) {
           institutionMap.set(institutionId, {
@@ -818,69 +860,65 @@ const Reports = () => {
             courses: []
           });
         }
-
         const institutionReport = institutionMap.get(institutionId)!;
 
-        const lessonsWithAttendance = (instance.lesson_reports || []).map(report => {
-          const attendanceData: AttendanceRecord[] = [];
-          if (report.lesson_attendance) {
-            for (const attendance of report.lesson_attendance) {
-              if (attendance.students) {
-                attendanceData.push({
-                  id: attendance.students.id,
-                  name: attendance.students.full_name,
-                  attended: attendance.attended
-                });
-              }
-            }
-          }
-
-          const lessonStatus: 'completed' | 'reported_issues' | 'not_reported' = 
-            report.is_completed !== false ? 'completed' : 'reported_issues';
-
-          return {
-            id: report.id,
-            lesson_title: report.lesson_title,
-            course_name: instance.courses?.name || 'לא זמין',
-            institution_name: institutionName,
-            lesson_number: report.reported_lesson_instances?.[0]?.lesson_number || 1,
-            participants_count: report.participants_count || 0,
-            total_students: instance.students?.length || 0,
-            is_lesson_ok: report.is_lesson_ok || false,
-            is_completed: report.is_completed !== false,
-            hourly_rate: report.is_completed !== false ? (instance.price_for_customer || 0) : 0, // 0 שקל אם השיעור לא התקיים
-            created_at: report.created_at,
-            attendanceData,
-            lesson_status: lessonStatus,
-            schedule_id: report.lesson_schedule_id,
-          };
-        });
-
-        if (lessonsWithAttendance.length > 0) {
+        if (!courseMap.has(courseInstanceId)) {
           const courseDetail: CourseDetail = {
-            id: instance.id,
-            course_name: instance.courses?.name || 'לא זמין',
-            instructor_name: instance.instructor?.full_name || 'לא זמין',
-            lesson_count: lessonsWithAttendance.length,
-            student_count: instance.students?.length || 0,
-            price_per_lesson: instance.price_for_customer || 0,
-            lesson_details: lessonsWithAttendance
+            id: courseInstanceId,
+            course_name: courseInstance.courses?.name || 'לא זמין',
+            instructor_name: courseInstance.instructor?.full_name || 'לא זמין',
+            lesson_count: 0,
+            student_count: courseInstance.students?.length || 0,
+            price_per_lesson: 100,
+            lesson_details: []
           };
-
+          courseMap.set(courseInstanceId, courseDetail);
           institutionReport.courses.push(courseDetail);
-          institutionReport.total_lessons += lessonsWithAttendance.length;
-          
-          // סכום ההכנסות - כבר כולל 0 אם השיעור לא התקיים
-          const totalRevenue = lessonsWithAttendance.reduce((sum, lesson) => sum + lesson.hourly_rate, 0);
-          institutionReport.total_revenue += totalRevenue;
-          
-          const uniqueStudents = new Set();
-          (instance.students || []).forEach(student => uniqueStudents.add(student.id));
+
+          const uniqueStudents = new Set<string>((courseInstance.students || []).map((s: { id: string }) => s.id));
           institutionReport.total_students = Math.max(institutionReport.total_students, uniqueStudents.size);
         }
+        const course = courseMap.get(courseInstanceId)!;
+
+        const attendanceData: AttendanceRecord[] = (report.lesson_attendance || [])
+          .filter((a: any) => a.students)
+          .map((a: any) => ({
+            id: a.students.id,
+            name: a.students.full_name,
+            attended: a.attended
+          }));
+
+        const lessonStatus: 'completed' | 'reported_issues' | 'not_reported' =
+          report.is_completed !== false ? 'completed' : 'reported_issues';
+
+        const lessonDetail: LessonReportDetail = {
+          id: report.id,
+          lesson_title: report.lesson_title,
+          course_name: courseInstance.courses?.name || 'לא זמין',
+          institution_name: institutionName,
+          lesson_number: report.reported_lesson_instances?.[0]?.lesson_number || 1,
+          participants_count: report.participants_count || 0,
+          total_students: courseInstance.students?.length || 0,
+          is_lesson_ok: report.is_lesson_ok || false,
+          is_completed: report.is_completed !== false,
+          hourly_rate: report.is_completed !== false ? (report.lessons_count ?? 1) * 100 : 0,
+          lessons_count: report.is_completed !== false ? 1 : 0,
+          created_at: report.created_at,
+          attendanceData,
+          lesson_status: lessonStatus,
+          schedule_id: report.lesson_schedule_id,
+        };
+
+        course.lesson_details.push(lessonDetail);
+        course.lesson_count += 1;
+        institutionReport.total_lessons += 1;
+        const lessonsCount = report.lessons_count ?? 1;
+        institutionReport.total_revenue += report.is_completed !== false ? lessonsCount * 100 : 0;
       }
 
-      return Array.from(institutionMap.values());
+      const result = Array.from(institutionMap.values());
+      console.log('INSTITUTION RESULT', result?.length, result?.[0]?.name);
+      return result;
     } catch (error) {
       console.error('Error fetching institution data:', error);
       return [];
@@ -1267,36 +1305,96 @@ const Reports = () => {
               {reportType === 'instructors' ? (
                 <div>
                   <Label>מדריך</Label>
-                  <Select value={selectedInstructor} onValueChange={setSelectedInstructor}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">כל המדריכים</SelectItem>
-                      {instructorsList.map(instructor => (
-                        <SelectItem key={instructor.id} value={instructor.id}>
-                          {instructor.full_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={instructorOpen} onOpenChange={setInstructorOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" role="combobox" className="w-full justify-between font-normal" dir="rtl">
+                        <span className="truncate">
+                          {selectedInstructor === 'all'
+                            ? 'כל המדריכים'
+                            : instructorsList.find(i => i.id === selectedInstructor)?.full_name ?? 'כל המדריכים'}
+                        </span>
+                        <ChevronDown className="h-4 w-4 opacity-50 shrink-0 mr-2" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="p-0 w-64" align="start" dir="rtl">
+                      <div className="p-2 border-b">
+                        <input
+                          className="w-full text-sm outline-none bg-transparent placeholder:text-muted-foreground"
+                          placeholder="חפש מדריך..."
+                          value={instructorSearch}
+                          onChange={e => setInstructorSearch(e.target.value)}
+                          dir="rtl"
+                          autoFocus
+                        />
+                      </div>
+                      <ul className="max-h-60 overflow-y-auto py-1">
+                        <li
+                          className="px-3 py-2 text-sm cursor-pointer hover:bg-accent rounded-sm"
+                          onClick={() => { setSelectedInstructor('all'); setInstructorOpen(false); setInstructorSearch(''); }}
+                        >
+                          כל המדריכים
+                        </li>
+                        {instructorsList
+                          .filter(i => i.full_name.includes(instructorSearch))
+                          .map(instructor => (
+                            <li
+                              key={instructor.id}
+                              className="px-3 py-2 text-sm cursor-pointer hover:bg-accent rounded-sm"
+                              onClick={() => { setSelectedInstructor(instructor.id); setInstructorOpen(false); setInstructorSearch(''); }}
+                            >
+                              {instructor.full_name}
+                            </li>
+                          ))}
+                      </ul>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               ) : (
                 <div>
                   <Label>מוסד חינוכי</Label>
-                  <Select value={selectedInstitution} onValueChange={setSelectedInstitution}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">כל המוסדות</SelectItem>
-                      {institutionsList.map(institution => (
-                        <SelectItem key={institution.id} value={institution.id}>
-                          {institution.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={institutionOpen} onOpenChange={setInstitutionOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" role="combobox" className="w-full justify-between font-normal" dir="rtl">
+                        <span className="truncate">
+                          {selectedInstitution === 'all'
+                            ? 'כל המוסדות'
+                            : institutionsList.find(i => i.id === selectedInstitution)?.name ?? 'כל המוסדות'}
+                        </span>
+                        <ChevronDown className="h-4 w-4 opacity-50 shrink-0 mr-2" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="p-0 w-64" align="start" dir="rtl">
+                      <div className="p-2 border-b">
+                        <input
+                          className="w-full text-sm outline-none bg-transparent placeholder:text-muted-foreground"
+                          placeholder="חפש מוסד..."
+                          value={institutionSearch}
+                          onChange={e => setInstitutionSearch(e.target.value)}
+                          dir="rtl"
+                          autoFocus
+                        />
+                      </div>
+                      <ul className="max-h-60 overflow-y-auto py-1">
+                        <li
+                          className="px-3 py-2 text-sm cursor-pointer hover:bg-accent rounded-sm"
+                          onClick={() => { setSelectedInstitution('all'); setInstitutionOpen(false); setInstitutionSearch(''); }}
+                        >
+                          כל המוסדות
+                        </li>
+                        {institutionsList
+                          .filter(i => i.name.includes(institutionSearch))
+                          .map(institution => (
+                            <li
+                              key={institution.id}
+                              className="px-3 py-2 text-sm cursor-pointer hover:bg-accent rounded-sm"
+                              onClick={() => { setSelectedInstitution(institution.id); setInstitutionOpen(false); setInstitutionSearch(''); }}
+                            >
+                              {institution.name}
+                            </li>
+                          ))}
+                      </ul>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               )}
               <div className="flex items-end">

@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom
 import { supabase } from '@/integrations/supabase/client';
 
 
-type UserRole = 'instructor' | 'pedagogical_manager' | 'admin' | '';
+type UserRole = 'instructor' | 'pedagogical_manager' | 'admin' | 'sales_rep' | '';
 
 interface AuthContextType {
   user: User | null;

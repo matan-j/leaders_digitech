@@ -9,10 +9,24 @@ import { loadCompanyInfo } from '@/lib/quotes/company-info';
 import InstitutionsPdfDocument from './InstitutionsPdfDocument';
 
 interface LessonDetail {
-  lesson_status: string;
+  id: string;
+  lesson_title: string;
+  lesson_number: number;
+  participants_count: number;
+  total_students: number;
+  is_lesson_ok: boolean;
+  is_completed: boolean;
+  hourly_rate: number;
+  created_at: string;
+  lesson_status: 'completed' | 'reported_issues' | 'not_reported';
+  scheduled_date?: string;
 }
 
 interface CourseDetail {
+  id: string;
+  course_name: string;
+  instructor_name: string;
+  student_count: number;
   lesson_details: LessonDetail[];
 }
 

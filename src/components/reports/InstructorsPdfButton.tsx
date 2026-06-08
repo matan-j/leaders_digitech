@@ -8,12 +8,31 @@ import { loadCompanyInfo } from '@/lib/quotes/company-info';
 
 import InstructorsPdfDocument from './InstructorsPdfDocument';
 
+interface LessonDetail {
+  id: string;
+  lesson_title: string;
+  course_name: string;
+  institution_name: string;
+  lesson_number: number;
+  participants_count: number;
+  total_students: number;
+  is_lesson_ok: boolean;
+  is_completed: boolean;
+  hourly_rate: number;
+  lessons_count: number;
+  created_at: string;
+  lesson_status: 'completed' | 'reported_issues' | 'not_reported';
+  scheduled_date?: string;
+  actual_hours?: number;
+}
+
 interface InstructorRow {
   id: string;
   full_name: string;
   total_lessons: number;
   total_hours: number;
   total_salary: number;
+  reports: LessonDetail[];
 }
 
 interface InstructorsPdfButtonProps {

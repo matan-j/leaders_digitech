@@ -54,13 +54,19 @@ const InstitutionsPdfButton: React.FC<InstitutionsPdfButtonProps> = ({
 
   const handleClick = async () => {
     setGenerating(true);
+    let logoUrl: string | null = null;
     try {
       const companyInfo = await loadCompanyInfo();
+      logoUrl = companyInfo.logoUrl ?? null;
+    } catch {
+      logoUrl = null;
+    }
+    try {
       const blob = await pdf(
         <InstitutionsPdfDocument
           institutionData={institutionData}
           selectedMonth={selectedMonth}
-          logoUrl={companyInfo.logoUrl}
+          logoUrl={logoUrl ?? undefined}
         />
       ).toBlob();
       const url = URL.createObjectURL(blob);

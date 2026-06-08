@@ -444,6 +444,13 @@ const Reports = () => {
     }
   }, [monthlyReports, loadMonthOnDemand]);
 
+  const actualMonthLabel = useMemo(() => {
+    if (selectedMonth === 'current') {
+      return new Date().toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
+    }
+    return monthlyReports.get(selectedMonth)?.month || (monthsList.find(m => m.key === selectedMonth)?.label ?? selectedMonth);
+  }, [selectedMonth, monthlyReports, monthsList]);
+
   const selectedMonthDates = useMemo(() => {
     const m = monthsList.find(m => m.key === selectedMonth);
     const result = m
@@ -503,7 +510,7 @@ const Reports = () => {
   }, [reportType]);
 
   const exportSalaryCsv = useCallback(() => {
-    const label = monthsList.find(m => m.key === selectedMonth)?.label ?? '';
+    const label = actualMonthLabel;
     const totalReports = salaryData.reduce((s, r) => s + r.report_count, 0);
     const totalLessons = salaryData.reduce((s, r) => s + r.lesson_count, 0);
     const totalPay = salaryData.reduce((s, r) => s + r.total_pay, 0);
@@ -520,56 +527,160 @@ const Reports = () => {
     a.download = `salary-${label}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [salaryData, selectedMonth, monthsList]);
+  }, [salaryData, actualMonthLabel]);
 
   const exportInstructorsCsv = useCallback(() => {
-    const label = monthsList.find(m => m.key === selectedMonth)?.label ?? '';
+    const label = actualMonthLabel;
     const data = filteredMonthData.detailData as InstructorReport[];
-    const totalLessons = data.reduce((s, r) => s + r.total_lessons, 0);
-    const totalHours = data.reduce((s, r) => s + r.total_hours, 0);
-    const totalPay = data.reduce((s, r) => s + r.total_salary, 0);
-    const rows = [
-      ['מדריך', 'סה"כ שיעורים', 'סה"כ שעות', 'סה"כ לתשלום'],
-      ...data.map(r => [r.full_name, String(r.total_lessons), r.total_hours.toFixed(1), String(r.total_salary)]),
-      ['סה"כ', String(totalLessons), totalHours.toFixed(1), String(totalPay)],
+
+    const lessonStatusLabel = (r: LessonReportDetail): string => {
+      if (r.lesson_status === 'not_reported') return 'טרם דווח';
+      if (!r.is_completed) return 'לא התקיים';
+      return r.is_lesson_ok ? 'הושלם' : 'הושלם*';
+    };
+
+    const rows: string[][] = [
+      ['מדריך', '#', 'נושא השיעור', 'קורס', 'מוסד', 'נוכחות', 'שיעורים', 'שעות', 'שכר', 'סטטוס', 'תאריך'],
     ];
+
+    let grandLessons = 0;
+    let grandHours = 0;
+    let grandPay = 0;
+
+    for (const instructor of data) {
+      const sorted = [...instructor.reports].sort((a, b) => {
+        if (a.lesson_status === 'not_reported' && b.lesson_status !== 'not_reported') return 1;
+        if (a.lesson_status !== 'not_reported' && b.lesson_status === 'not_reported') return -1;
+        return a.lesson_number - b.lesson_number;
+      });
+
+      for (const r of sorted) {
+        const isPending = r.lesson_status === 'not_reported';
+        const dateRaw = isPending ? r.scheduled_date : r.created_at;
+        const dateStr = dateRaw
+          ? new Date(dateRaw).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' })
+          : '—';
+        rows.push([
+          instructor.full_name,
+          String(r.lesson_number),
+          r.lesson_title,
+          r.course_name,
+          r.institution_name,
+          isPending ? `0/${r.total_students}` : `${r.participants_count}/${r.total_students}`,
+          isPending ? '—' : String(r.lessons_count),
+          isPending ? '—' : (r.actual_hours ?? 1).toFixed(1),
+          isPending ? '—' : String(r.hourly_rate),
+          lessonStatusLabel(r),
+          dateStr,
+        ]);
+      }
+
+      rows.push([
+        `סה"כ — ${instructor.full_name}`, '', '', '', '', '',
+        String(instructor.total_lessons),
+        instructor.total_hours.toFixed(1),
+        String(instructor.total_salary),
+        '', '',
+      ]);
+
+      grandLessons += instructor.total_lessons;
+      grandHours += instructor.total_hours;
+      grandPay += instructor.total_salary;
+    }
+
+    rows.push([
+      'סה"כ כל המדריכים', '', '', '', '', '',
+      String(grandLessons),
+      grandHours.toFixed(1),
+      String(grandPay),
+      '', '',
+    ]);
+
     const csv = rows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `instructors-${label}.csv`;
+    document.body.appendChild(a);
     a.click();
+    a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 100);
-  }, [filteredMonthData, selectedMonth, monthsList]);
+  }, [filteredMonthData, actualMonthLabel]);
 
   const exportInstitutionsCsv = useCallback(() => {
-    const label = monthsList.find(m => m.key === selectedMonth)?.label ?? '';
+    const label = actualMonthLabel;
     const data = filteredMonthData.detailData as InstitutionReport[];
-    const totalLessons = data.reduce((s, r) => s + r.total_lessons, 0);
-    const totalRevenue = data.reduce((s, r) => s + r.total_revenue, 0);
-    const rows = [
-      ['מוסד', 'קורסים', 'שיעורים שדווחו', 'אחוז השלמה', 'הכנסות'],
-      ...data.map(r => {
-        const totalInst = r.courses.reduce((s, c) => s + c.lesson_details.length, 0);
-        const completed = r.courses.reduce(
-          (s, c) => s + c.lesson_details.filter(l => l.lesson_status === 'completed').length,
-          0,
-        );
-        const pct = totalInst > 0 ? Math.round((completed / totalInst) * 100) : 0;
-        return [r.name, String(r.courses.length), String(r.total_lessons), `${pct}%`, String(r.total_revenue)];
-      }),
-      ['סה"כ', '', String(totalLessons), '', String(totalRevenue)],
+
+    const lessonStatusLabel = (r: LessonReportDetail): string => {
+      if (r.lesson_status === 'not_reported') return 'טרם דווח';
+      if (!r.is_completed) return 'לא התקיים';
+      return r.is_lesson_ok ? 'הושלם' : 'הושלם*';
+    };
+
+    const rows: string[][] = [
+      ['מוסד', 'קורס', 'מדריך', '#', 'נושא', 'נוכחות', 'שכר', 'סטטוס', 'תאריך'],
     ];
+
+    let grandLessons = 0;
+    let grandRevenue = 0;
+
+    for (const institution of data) {
+      for (const course of institution.courses) {
+        let courseRevenue = 0;
+
+        for (const r of course.lesson_details) {
+          const isPending = r.lesson_status === 'not_reported';
+          const dateRaw = isPending ? r.scheduled_date : r.created_at;
+          const dateStr = dateRaw
+            ? new Date(dateRaw).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' })
+            : '—';
+          const pay = isPending ? 0 : r.hourly_rate;
+          courseRevenue += pay;
+
+          rows.push([
+            institution.name,
+            course.course_name,
+            course.instructor_name,
+            String(r.lesson_number),
+            r.lesson_title,
+            isPending ? `0/${r.total_students}` : `${r.participants_count}/${r.total_students}`,
+            isPending ? '—' : String(pay),
+            lessonStatusLabel(r),
+            dateStr,
+          ]);
+        }
+
+        rows.push([
+          '', `סה"כ קורס — ${course.course_name}`, '', '', '', '', String(courseRevenue), '', '',
+        ]);
+      }
+
+      rows.push([
+        `סה"כ — ${institution.name}`, '', '', '', '',
+        '', String(institution.total_revenue), '', '',
+      ]);
+
+      grandLessons += institution.total_lessons;
+      grandRevenue += institution.total_revenue;
+    }
+
+    rows.push([
+      'סה"כ כל המוסדות', '', '', '', '',
+      '', String(grandRevenue), '', '',
+    ]);
+
     const csv = rows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `institutions-${label}.csv`;
+    document.body.appendChild(a);
     a.click();
+    a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 100);
-  }, [filteredMonthData, selectedMonth, monthsList]);
+  }, [filteredMonthData, actualMonthLabel]);
 
   useEffect(() => {
     if (reportType !== 'salary') return;
@@ -875,7 +986,7 @@ const Reports = () => {
       if (error) throw error;
 
       console.log('FETCH PARAMS', startDate, endDate);
-      console.log('RAW LESSON REPORTS', reports?.length, JSON.stringify(reports?.[0]).slice(0, 300));
+      console.log('RAW LESSON REPORTS', reports?.length, (JSON.stringify(reports?.[0]) || '').slice(0, 300));
 
       const institutionMap = new Map<string, InstitutionReport>();
       const courseMap = new Map<string, CourseDetail>();
@@ -1217,21 +1328,21 @@ const Reports = () => {
               {reportType === 'salary' && (
                 <SalaryPdfButton
                   salaryData={salaryData}
-                  selectedMonth={monthsList.find(m => m.key === selectedMonth)?.label ?? ''}
+                  selectedMonth={actualMonthLabel}
                   disabled={salaryData.length === 0}
                 />
               )}
               {reportType === 'instructors' && (
                 <InstructorsPdfButton
                   instructorData={filteredMonthData.detailData as InstructorReport[]}
-                  selectedMonth={monthsList.find(m => m.key === selectedMonth)?.label ?? ''}
+                  selectedMonth={actualMonthLabel}
                   disabled={filteredMonthData.detailData.length === 0}
                 />
               )}
               {reportType === 'institutions' && (
                 <InstitutionsPdfButton
                   institutionData={filteredMonthData.detailData as InstitutionReport[]}
-                  selectedMonth={monthsList.find(m => m.key === selectedMonth)?.label ?? ''}
+                  selectedMonth={actualMonthLabel}
                   disabled={filteredMonthData.detailData.length === 0}
                 />
               )}

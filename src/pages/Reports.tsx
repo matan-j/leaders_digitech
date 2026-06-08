@@ -16,6 +16,8 @@ import { format, addMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { fetchCombinedSchedules, filterSchedulesByDateRange } from '@/utils/scheduleUtils';
 import SalaryPdfButton from '@/components/reports/SalaryPdfButton';
+import InstructorsPdfButton from '@/components/reports/InstructorsPdfButton';
+import InstitutionsPdfButton from '@/components/reports/InstitutionsPdfButton';
 
 interface MonthlyReport {
   month: string;
@@ -519,6 +521,55 @@ const Reports = () => {
     a.click();
     URL.revokeObjectURL(url);
   }, [salaryData, selectedMonth, monthsList]);
+
+  const exportInstructorsCsv = useCallback(() => {
+    const label = monthsList.find(m => m.key === selectedMonth)?.label ?? '';
+    const data = filteredMonthData.detailData as InstructorReport[];
+    const totalLessons = data.reduce((s, r) => s + r.total_lessons, 0);
+    const totalHours = data.reduce((s, r) => s + r.total_hours, 0);
+    const totalPay = data.reduce((s, r) => s + r.total_salary, 0);
+    const rows = [
+      ['מדריך', 'סה"כ שיעורים', 'סה"כ שעות', 'סה"כ לתשלום'],
+      ...data.map(r => [r.full_name, String(r.total_lessons), r.total_hours.toFixed(1), String(r.total_salary)]),
+      ['סה"כ', String(totalLessons), totalHours.toFixed(1), String(totalPay)],
+    ];
+    const csv = rows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `instructors-${label}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 100);
+  }, [filteredMonthData, selectedMonth, monthsList]);
+
+  const exportInstitutionsCsv = useCallback(() => {
+    const label = monthsList.find(m => m.key === selectedMonth)?.label ?? '';
+    const data = filteredMonthData.detailData as InstitutionReport[];
+    const totalLessons = data.reduce((s, r) => s + r.total_lessons, 0);
+    const totalRevenue = data.reduce((s, r) => s + r.total_revenue, 0);
+    const rows = [
+      ['מוסד', 'קורסים', 'שיעורים שדווחו', 'אחוז השלמה', 'הכנסות'],
+      ...data.map(r => {
+        const totalInst = r.courses.reduce((s, c) => s + c.lesson_details.length, 0);
+        const completed = r.courses.reduce(
+          (s, c) => s + c.lesson_details.filter(l => l.lesson_status === 'completed').length,
+          0,
+        );
+        const pct = totalInst > 0 ? Math.round((completed / totalInst) * 100) : 0;
+        return [r.name, String(r.courses.length), String(r.total_lessons), `${pct}%`, String(r.total_revenue)];
+      }),
+      ['סה"כ', '', String(totalLessons), '', String(totalRevenue)],
+    ];
+    const csv = rows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `institutions-${label}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 100);
+  }, [filteredMonthData, selectedMonth, monthsList]);
 
   useEffect(() => {
     if (reportType !== 'salary') return;
@@ -1150,17 +1201,38 @@ const Reports = () => {
               </Button>
               <Button
                 className="flex items-center space-x-2"
-                onClick={reportType === 'salary' ? exportSalaryCsv : undefined}
-                disabled={reportType === 'salary' && salaryData.length === 0}
+                onClick={
+                  reportType === 'salary' ? exportSalaryCsv :
+                  reportType === 'instructors' ? exportInstructorsCsv :
+                  exportInstitutionsCsv
+                }
+                disabled={
+                  (reportType === 'salary' && salaryData.length === 0) ||
+                  (reportType !== 'salary' && filteredMonthData.detailData.length === 0)
+                }
               >
                 <Download className="h-4 w-4" />
-                <span>ייצוא דוח</span>
+                <span>ייצוא Excel ⬇</span>
               </Button>
               {reportType === 'salary' && (
                 <SalaryPdfButton
                   salaryData={salaryData}
                   selectedMonth={monthsList.find(m => m.key === selectedMonth)?.label ?? ''}
                   disabled={salaryData.length === 0}
+                />
+              )}
+              {reportType === 'instructors' && (
+                <InstructorsPdfButton
+                  instructorData={filteredMonthData.detailData as InstructorReport[]}
+                  selectedMonth={monthsList.find(m => m.key === selectedMonth)?.label ?? ''}
+                  disabled={filteredMonthData.detailData.length === 0}
+                />
+              )}
+              {reportType === 'institutions' && (
+                <InstitutionsPdfButton
+                  institutionData={filteredMonthData.detailData as InstitutionReport[]}
+                  selectedMonth={monthsList.find(m => m.key === selectedMonth)?.label ?? ''}
+                  disabled={filteredMonthData.detailData.length === 0}
                 />
               )}
             </div>

@@ -6,23 +6,35 @@ import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { loadCompanyInfo } from '@/lib/quotes/company-info';
 
-import SalaryPdfDocument from './SalaryPdfDocument';
+import InstitutionsPdfDocument from './InstitutionsPdfDocument';
 
-interface SalaryRow {
-  instructor_id: string;
-  full_name: string;
-  report_count: number;
-  lesson_count: number;
-  total_pay: number;
+interface LessonDetail {
+  lesson_status: string;
 }
 
-interface SalaryPdfButtonProps {
-  salaryData: SalaryRow[];
+interface CourseDetail {
+  lesson_details: LessonDetail[];
+}
+
+interface InstitutionRow {
+  id: string;
+  name: string;
+  total_lessons: number;
+  total_revenue: number;
+  courses: CourseDetail[];
+}
+
+interface InstitutionsPdfButtonProps {
+  institutionData: InstitutionRow[];
   selectedMonth: string;
   disabled?: boolean;
 }
 
-const SalaryPdfButton: React.FC<SalaryPdfButtonProps> = ({ salaryData, selectedMonth, disabled }) => {
+const InstitutionsPdfButton: React.FC<InstitutionsPdfButtonProps> = ({
+  institutionData,
+  selectedMonth,
+  disabled,
+}) => {
   const { toast } = useToast();
   const [generating, setGenerating] = useState(false);
 
@@ -31,8 +43,8 @@ const SalaryPdfButton: React.FC<SalaryPdfButtonProps> = ({ salaryData, selectedM
     try {
       const companyInfo = await loadCompanyInfo();
       const blob = await pdf(
-        <SalaryPdfDocument
-          salaryData={salaryData}
+        <InstitutionsPdfDocument
+          institutionData={institutionData}
           selectedMonth={selectedMonth}
           logoUrl={companyInfo.logoUrl}
         />
@@ -41,7 +53,7 @@ const SalaryPdfButton: React.FC<SalaryPdfButtonProps> = ({ salaryData, selectedM
       const a = document.createElement('a');
       a.href = url;
       const safeName = selectedMonth.replace(/\s+/g, '-');
-      a.download = `salary-report-${safeName}.pdf`;
+      a.download = `institutions-report-${safeName}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -65,4 +77,4 @@ const SalaryPdfButton: React.FC<SalaryPdfButtonProps> = ({ salaryData, selectedM
   );
 };
 
-export default SalaryPdfButton;
+export default InstitutionsPdfButton;

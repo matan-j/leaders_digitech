@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { format, addMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { fetchCombinedSchedules, filterSchedulesByDateRange } from '@/utils/scheduleUtils';
+import SalaryPdfButton from '@/components/reports/SalaryPdfButton';
 
 interface MonthlyReport {
   month: string;
@@ -1155,6 +1156,13 @@ const Reports = () => {
                 <Download className="h-4 w-4" />
                 <span>ייצוא דוח</span>
               </Button>
+              {reportType === 'salary' && (
+                <SalaryPdfButton
+                  salaryData={salaryData}
+                  selectedMonth={monthsList.find(m => m.key === selectedMonth)?.label ?? ''}
+                  disabled={salaryData.length === 0}
+                />
+              )}
             </div>
           </div>
         </div>

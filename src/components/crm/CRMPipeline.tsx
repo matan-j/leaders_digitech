@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { CRM_CUSTOMER_CLASS, CRM_LEAD_CLASS, CRM_SOFT_DELETE_FILTER } from '@/lib/crmQueryHelpers';
@@ -76,7 +77,7 @@ function KpiStrip({ kpis }: { kpis: KPIs }) {
 
 // ─── Institution card ─────────────────────────────────────────────────────────
 
-function InstitutionCard({ inst, stageColor, onDragStart }: { inst: InstitutionRow; stageColor: string; onDragStart: (id: string) => void }) {
+function InstitutionCard({ inst, stageColor, onDragStart, onOpen }: { inst: InstitutionRow; stageColor: string; onDragStart: (id: string) => void; onOpen: (id: string) => void }) {
   const hot = isHot(inst.crm_last_contact_at);
   const instrName = inst.instructor?.full_name ?? null;
   const note = inst.crm_notes?.trim() || null;
@@ -85,7 +86,9 @@ function InstitutionCard({ inst, stageColor, onDragStart }: { inst: InstitutionR
     <div
       draggable
       onDragStart={() => onDragStart(inst.id)}
-      style={{ background: '#fff', border: '1px solid #E5E7EB', borderTop: `3px solid ${stageColor}`, borderRadius: 8, padding: '12px 14px', cursor: 'grab', userSelect: 'none' }}
+      onClick={() => onOpen(inst.id)}
+      title="פתח כרטיס מוסד"
+      style={{ background: '#fff', border: '1px solid #E5E7EB', borderTop: `3px solid ${stageColor}`, borderRadius: 8, padding: '12px 14px', cursor: 'pointer', userSelect: 'none' }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
         <div style={{ fontWeight: 600, fontSize: 13, color: '#111827', lineHeight: 1.3 }}>{inst.name}</div>
@@ -144,11 +147,12 @@ function InstitutionCard({ inst, stageColor, onDragStart }: { inst: InstitutionR
 
 // ─── Kanban column ────────────────────────────────────────────────────────────
 
-function KanbanColumn({ stage, rows, onDragStart, onDrop }: {
+function KanbanColumn({ stage, rows, onDragStart, onDrop, onOpen }: {
   stage: PipelineStage;
   rows: InstitutionRow[];
   onDragStart: (id: string) => void;
   onDrop: (stageName: string) => void;
+  onOpen: (id: string) => void;
 }) {
   const [over, setOver] = useState(false);
   const color = stage.color;
@@ -169,7 +173,7 @@ function KanbanColumn({ stage, rows, onDragStart, onDrop }: {
       </div>
       <div style={{ flex: 1, minHeight: 100, display: 'flex', flexDirection: 'column', gap: 8, background: over ? '#F3E8FF' : 'transparent', borderRadius: 8, border: over ? '2px dashed #6D28D9' : '2px dashed transparent', padding: over ? 6 : 0, transition: 'all 0.15s' }}>
         {rows.map((inst) => (
-          <InstitutionCard key={inst.id} inst={inst} stageColor={color} onDragStart={onDragStart} />
+          <InstitutionCard key={inst.id} inst={inst} stageColor={color} onDragStart={onDragStart} onOpen={onOpen} />
         ))}
       </div>
     </div>
@@ -552,6 +556,7 @@ function AutomationRulesSection({ currentUserId, stageNames }: { currentUserId: 
 
 export default function CRMPipeline() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [stages, setStages] = useState<PipelineStage[]>([]);
   const [institutions, setInstitutions] = useState<InstitutionRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -719,6 +724,7 @@ export default function CRMPipeline() {
               rows={byStage(stage.name, idx === 0)}
               onDragStart={(id) => { draggingId.current = id; }}
               onDrop={handleDrop}
+              onOpen={(id) => navigate(`/crm/institution/${id}`)}
             />
           ))}
         </div>

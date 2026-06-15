@@ -23,6 +23,13 @@ import InstructorRegionTabs, { type RegionTabValue } from './InstructorRegionTab
 import AddInstructorModal, { type InstructorRecord } from './AddInstructorModal';
 import InstructorCsvImportDialog from './InstructorCsvImportDialog';
 import AssignInstructorPlanningDialog from './AssignInstructorPlanningDialog';
+import InlineEditCell, { type InlineSelectOption } from './InlineEditCell';
+
+// Region picker options for the inline editor — single source is REGIONS.
+const REGION_OPTIONS: InlineSelectOption[] = [
+  { value: '', label: '— ללא —' },
+  ...REGIONS.map((r) => ({ value: r.key, label: r.label })),
+];
 
 interface InstructorRow {
   id: string;
@@ -381,6 +388,47 @@ const CRMInstructorsList = () => {
     notes: r.notes,
   });
 
+  // Generic inline field update: optimistic local write, rollback + toast on error.
+  // Throwing lets InlineEditCell drop back to display mode.
+  const updateField = useCallback(
+    async (id: string, field: keyof InstructorRow, value: unknown) => {
+      let prev: InstructorRow | undefined;
+      setRows((rs) =>
+        rs.map((r) => {
+          if (r.id !== id) return r;
+          prev = r;
+          return { ...r, [field]: value } as InstructorRow;
+        })
+      );
+      const { error } = await supabase.from('instructors').update({ [field]: value }).eq('id', id);
+      if (error) {
+        if (prev) setRows((rs) => rs.map((r) => (r.id === id ? (prev as InstructorRow) : r)));
+        toast.error(`עדכון נכשל: ${error.message ?? ''}`);
+        throw error;
+      }
+    },
+    []
+  );
+
+  // Text columns: optional required guard + optional lowercasing (email).
+  const saveText = useCallback(
+    (
+      id: string,
+      field: keyof InstructorRow,
+      value: unknown,
+      opts?: { required?: boolean; lower?: boolean }
+    ) => {
+      let val = (value as string | null) ?? null;
+      if (val && opts?.lower) val = val.toLowerCase();
+      if (opts?.required && !val) {
+        toast.error('שדה חובה — לא ניתן להשאיר ריק');
+        return Promise.reject(new Error('required'));
+      }
+      return updateField(id, field, val);
+    },
+    [updateField]
+  );
+
   const markInactive = async (id: string) => {
     const { error } = await supabase.from('instructors').update({ status: 'inactive' }).eq('id', id);
     if (error) {
@@ -546,50 +594,110 @@ const CRMInstructorsList = () => {
                         className="border-t border-gray-100 hover:bg-blue-50/40 cursor-pointer"
                         onClick={() => navigate(`/crm/instructor/${r.id}`)}
                       >
-                        <td className="px-3 py-2 font-medium text-gray-900">{r.full_name}</td>
+                        <td className="px-3 py-2 font-medium text-gray-900 min-w-[9rem]">
+                          <InlineEditCell
+                            type="text"
+                            value={r.full_name}
+                            placeholder="שם מלא"
+                            onSave={(v) => saveText(r.id, 'full_name', v, { required: true })}
+                          />
+                        </td>
                         <td className="px-3 py-2 text-gray-600">
                           {r.role_type ? ROLE_TYPE_LABEL[r.role_type as keyof typeof ROLE_TYPE_LABEL] ?? r.role_type : '—'}
                         </td>
-                        <td className="px-3 py-2 text-gray-700">
-                          {r.phone ? (
-                            <a
-                              href={`tel:${r.phone}`}
-                              className="inline-flex items-center gap-1 text-gray-700 hover:text-blue-600"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <Phone className="w-3 h-3" />
-                              {r.phone}
-                            </a>
-                          ) : '—'}
+                        <td className="px-3 py-2 text-gray-700 min-w-[8rem]">
+                          <InlineEditCell
+                            type="text"
+                            value={r.phone}
+                            placeholder="טלפון"
+                            onSave={(v) => saveText(r.id, 'phone', v)}
+                            renderDisplay={(v) =>
+                              v ? (
+                                <span className="inline-flex items-center gap-1 text-gray-700">
+                                  <Phone className="w-3 h-3" />{String(v)}
+                                </span>
+                              ) : <span className="text-gray-400">—</span>
+                            }
+                          />
                         </td>
-                        <td className="px-3 py-2 text-gray-700">
-                          {r.email ? (
-                            <a
-                              href={`mailto:${r.email}`}
-                              className="inline-flex items-center gap-1 text-gray-700 hover:text-blue-600"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <Mail className="w-3 h-3" />
-                              {r.email}
-                            </a>
-                          ) : '—'}
+                        <td className="px-3 py-2 text-gray-700 min-w-[10rem]">
+                          <InlineEditCell
+                            type="text"
+                            value={r.email}
+                            placeholder="אימייל"
+                            onSave={(v) => saveText(r.id, 'email', v, { lower: true })}
+                            renderDisplay={(v) =>
+                              v ? (
+                                <span className="inline-flex items-center gap-1 text-gray-700">
+                                  <Mail className="w-3 h-3" />{String(v)}
+                                </span>
+                              ) : <span className="text-gray-400">—</span>
+                            }
+                          />
                         </td>
-                        <td className="px-3 py-2 text-gray-700">{r.city || '—'}</td>
-                        <td className="px-3 py-2">
-                          {r.region ? (
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] ${regionColor.badgeClass}`}>
-                              <span className={`inline-block w-1.5 h-1.5 rounded-full ${regionColor.dotClass}`} />
-                              {getRegionLabel(r.region)}
-                            </span>
-                          ) : <span className="text-gray-400">—</span>}
+                        <td className="px-3 py-2 text-gray-700 min-w-[7rem]">
+                          <InlineEditCell
+                            type="text"
+                            value={r.city}
+                            placeholder="עיר"
+                            onSave={(v) => saveText(r.id, 'city', v, { required: true })}
+                          />
                         </td>
-                        <td className="px-3 py-2"><ChipList items={r.subjects ?? []} color="blue" /></td>
-                        <td className="px-3 py-2"><ChipList items={r.audiences ?? []} color="green" /></td>
+                        <td className="px-3 py-2 min-w-[9rem]">
+                          <InlineEditCell
+                            type="select"
+                            value={r.region}
+                            options={REGION_OPTIONS}
+                            onSave={(v) => updateField(r.id, 'region', v)}
+                            renderDisplay={(v) =>
+                              v ? (
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] ${regionColor.badgeClass}`}>
+                                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${regionColor.dotClass}`} />
+                                  {getRegionLabel(v as string)}
+                                </span>
+                              ) : <span className="text-gray-400">—</span>
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-2 min-w-[10rem]">
+                          <InlineEditCell
+                            type="tags"
+                            value={r.subjects ?? []}
+                            placeholder="מתמטיקה; אנגלית"
+                            onSave={(v) => updateField(r.id, 'subjects', v)}
+                            renderDisplay={(v) => <ChipList items={(v as string[]) ?? []} color="blue" />}
+                          />
+                        </td>
+                        <td className="px-3 py-2 min-w-[10rem]">
+                          <InlineEditCell
+                            type="tags"
+                            value={r.audiences ?? []}
+                            placeholder="יסודי; חט״ב; מורים"
+                            onSave={(v) => updateField(r.id, 'audiences', v)}
+                            renderDisplay={(v) => <ChipList items={(v as string[]) ?? []} color="green" />}
+                          />
+                        </td>
                         <td className="px-3 py-2">
                           <AvailabilityCompact days={r.availability_days ?? []} hours={r.availability_hours} />
                         </td>
-                        <td className="px-3 py-2"><Stars score={r.rating_score} /></td>
-                        <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{formatRate(r.hourly_rate)}</td>
+                        <td className="px-3 py-2 min-w-[6rem]">
+                          <InlineEditCell
+                            type="number"
+                            value={r.rating_score}
+                            placeholder="1-5"
+                            onSave={(v) => updateField(r.id, 'rating_score', v)}
+                            renderDisplay={(v) => <Stars score={v as number | null} />}
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-gray-700 whitespace-nowrap min-w-[7rem]">
+                          <InlineEditCell
+                            type="number"
+                            value={r.hourly_rate}
+                            placeholder="תעריף"
+                            onSave={(v) => updateField(r.id, 'hourly_rate', v)}
+                            renderDisplay={(v) => <span>{formatRate(v as number | null)}</span>}
+                          />
+                        </td>
                         <td className="px-3 py-2 text-gray-700">
                           {r.profile_id !== null ? (load ?? 0) : '—'}
                         </td>

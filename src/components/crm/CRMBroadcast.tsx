@@ -458,6 +458,197 @@ function InstSearchBox({
   );
 }
 
+// ─── Edit group modal ─────────────────────────────────────────────────────────
+// Rename a manual list (WhatsApp group) and add/remove its institutions.
+// Reuses InstSearchBox: selected={members} gives search, chips, add, remove,
+// and duplicate-prevention for free. Writes go through the same RLS-backed
+// client calls already used by create/delete (crm_lists / crm_list_members).
+
+function EditGroupModal({
+  list,
+  userId,
+  onClose,
+  onSaved,
+}: {
+  list: { id: string; name: string; description: string | null };
+  userId: string | null;
+  onClose: () => void;
+  onSaved: (message: string) => void;
+}) {
+  const [name, setName] = useState(list.name);
+  const [desc, setDesc] = useState(list.description ?? '');
+  const [members, setMembers] = useState<InstResult[]>([]);
+  const [originalIds, setOriginalIds] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Load current members of the group
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const { data: memberRows, error: memberErr } = await supabase
+          .from('crm_list_members')
+          .select('institution_id')
+          .eq('list_id', list.id);
+        if (memberErr) throw memberErr;
+
+        const ids = [...new Set((memberRows ?? []).map(m => m.institution_id))];
+        if (ids.length === 0) {
+          if (active) { setMembers([]); setOriginalIds(new Set()); }
+          return;
+        }
+        // Fetch by id without the soft-delete filter so the true membership is
+        // always shown — even a removed institution can then be cleaned out.
+        const { data: insts, error: instErr } = await supabase
+          .from('educational_institutions')
+          .select('id, name, city')
+          .in('id', ids);
+        if (instErr) throw instErr;
+        if (!active) return;
+        setMembers((insts ?? []) as InstResult[]);
+        setOriginalIds(new Set(ids));
+      } catch (err) {
+        if (active) setLoadError(err instanceof Error ? err.message : 'שגיאה בטעינת מוסדות הקבוצה');
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [list.id]);
+
+  const trimmedName = name.trim();
+  const canSave = trimmedName.length > 0 && !saving && !loading && !loadError;
+
+  const handleSave = async () => {
+    if (!trimmedName) { setSaveError('שם הקבוצה הוא שדה חובה'); return; }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      // 1. Rename + description
+      const { error: updErr } = await supabase
+        .from('crm_lists')
+        .update({ name: trimmedName, description: desc.trim() || null, updated_at: new Date().toISOString() })
+        .eq('id', list.id);
+      if (updErr) throw updErr;
+
+      const currentIds = members.map(m => m.id);
+      const addedMembers = members.filter(m => !originalIds.has(m.id));
+      const removedIds = [...originalIds].filter(id => !currentIds.includes(id));
+
+      // 2. Add new institutions (ignoreDuplicates → safe against the UNIQUE constraint)
+      if (addedMembers.length > 0) {
+        const { error: addErr } = await supabase.from('crm_list_members').upsert(
+          addedMembers.map(m => ({ list_id: list.id, institution_id: m.id, added_by: userId })),
+          { onConflict: 'list_id,institution_id', ignoreDuplicates: true },
+        );
+        if (addErr) throw addErr;
+      }
+
+      // 3. Remove institutions the user dropped
+      if (removedIds.length > 0) {
+        const { error: delErr } = await supabase
+          .from('crm_list_members')
+          .delete()
+          .eq('list_id', list.id)
+          .in('institution_id', removedIds);
+        if (delErr) throw delErr;
+      }
+
+      onSaved('הקבוצה עודכנה בהצלחה');
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'שגיאה בשמירת הקבוצה');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      onClick={() => { if (!saving) onClose(); }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}
+    >
+      <div
+        dir="rtl"
+        onClick={e => e.stopPropagation()}
+        style={{ background: C.surface, borderRadius: 12, width: '100%', maxWidth: 480, maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.18)', padding: '20px 22px' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>עריכת קבוצה</div>
+          <button onClick={() => { if (!saving) onClose(); }} style={{ border: 'none', background: 'transparent', fontSize: 22, lineHeight: 1, cursor: 'pointer', color: C.textSub }}>×</button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: C.textSub, display: 'block', marginBottom: 4 }}>שם הקבוצה *</label>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="שם הקבוצה"
+              style={{ width: '100%', padding: '8px 10px', border: `1px solid ${trimmedName ? C.border : C.danger}`, borderRadius: 6, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+            />
+            {!trimmedName && <div style={{ fontSize: 11, color: C.danger, marginTop: 3 }}>שם הקבוצה הוא שדה חובה</div>}
+          </div>
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: C.textSub, display: 'block', marginBottom: 4 }}>תיאור (אופציונלי)</label>
+            <input
+              value={desc}
+              onChange={e => setDesc(e.target.value)}
+              placeholder="תיאור קצר..."
+              style={{ width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: C.textSub, display: 'block', marginBottom: 4 }}>מוסדות בקבוצה</label>
+            {loading ? (
+              <div style={{ padding: '14px', textAlign: 'center', fontSize: 12, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6 }}>טוען מוסדות...</div>
+            ) : loadError ? (
+              <div style={{ padding: '10px 12px', borderRadius: 6, background: C.dangerBg, color: C.danger, fontSize: 12, fontWeight: 600 }}>{loadError}</div>
+            ) : (
+              <>
+                <InstSearchBox
+                  selected={members}
+                  onSelect={inst => setMembers(prev => (prev.some(m => m.id === inst.id) ? prev : [...prev, inst]))}
+                  onRemove={id => setMembers(prev => prev.filter(m => m.id !== id))}
+                />
+                {members.length === 0 && (
+                  <div style={{ fontSize: 11, color: C.textDim, marginTop: 6 }}>אין מוסדות בקבוצה. חפש והוסף מוסדות.</div>
+                )}
+              </>
+            )}
+          </div>
+
+          {saveError && (
+            <div style={{ padding: '9px 12px', borderRadius: 6, background: C.dangerBg, color: C.danger, fontSize: 12, fontWeight: 600 }}>{saveError}</div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+            <button
+              onClick={onClose}
+              disabled={saving}
+              style={{ padding: '7px 16px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}
+            >
+              ביטול
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!canSave}
+              style={{ padding: '7px 18px', borderRadius: 6, border: 'none', background: canSave ? C.accent : C.border, color: '#fff', fontSize: 13, fontWeight: 600, cursor: canSave ? 'pointer' : 'not-allowed', opacity: saving ? 0.7 : 1 }}
+            >
+              {saving ? 'שומר...' : 'שמור שינויים'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 function applyDynamicAudienceFilter(query: any, audienceId: string | undefined, monthStart: string, sevenDaysAgo: string, noReplyStageName: string | null) {
@@ -547,10 +738,8 @@ export default function CRMBroadcast() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Add members to existing list
-  const [addToListId, setAddToListId] = useState<string | null>(null);
-  const [addSelected, setAddSelected] = useState<InstResult[]>([]);
-  const [addSaving, setAddSaving] = useState(false);
+  // Edit existing group (rename + add/remove members)
+  const [editGroup, setEditGroup] = useState<CRMList | null>(null);
 
   // Toast
   const [toast, setToast] = useState<string | null>(null);
@@ -763,20 +952,6 @@ export default function CRMBroadcast() {
     loadManualLists();
   };
 
-  const handleAddMembers = async (listId: string) => {
-    if (addSelected.length === 0) { setAddToListId(null); return; }
-    setAddSaving(true);
-    await supabase.from('crm_list_members').upsert(
-      addSelected.map(inst => ({ list_id: listId, institution_id: inst.id, added_by: user?.id ?? null })),
-      { onConflict: 'list_id,institution_id', ignoreDuplicates: true }
-    );
-    setAddSaving(false);
-    setAddToListId(null);
-    setAddSelected([]);
-    setToast('המוסדות נוספו בהצלחה');
-    loadManualLists();
-  };
-
   // Fetch recipient preview whenever step 2 is entered
   useEffect(() => {
     if (step !== 2 || sent) return;
@@ -970,6 +1145,16 @@ export default function CRMBroadcast() {
         <div style={{ marginBottom: 12, padding: '9px 14px', background: C.successBg, color: C.success, fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1px solid ${C.success}30` }}>
           ✓ {toast}
         </div>
+      )}
+
+      {/* Edit group modal */}
+      {editGroup && (
+        <EditGroupModal
+          list={editGroup}
+          userId={user?.id ?? null}
+          onClose={() => setEditGroup(null)}
+          onSaved={message => { setEditGroup(null); setToast(message); loadManualLists(); }}
+        />
       )}
 
       {/* Channel + steps bar */}
@@ -1176,39 +1361,13 @@ export default function CRMBroadcast() {
                         <ExpandableMemberTable sourceKind="list" channel={channel} listId={list.id} />
                       </div>
 
-                      {/* Add members */}
-                      {addToListId === list.id ? (
-                        <div style={{ marginTop: 10, padding: '10px', background: C.bg, borderRadius: 7, border: `1px solid ${C.borderLight}` }}>
-                          <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 6 }}>הוסף מוסדות לרשימה</div>
-                          <InstSearchBox
-                            selected={addSelected}
-                            onSelect={inst => setAddSelected(prev => [...prev, inst])}
-                            onRemove={id => setAddSelected(prev => prev.filter(i => i.id !== id))}
-                          />
-                          <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
-                            <button
-                              onClick={() => { setAddToListId(null); setAddSelected([]); }}
-                              style={{ padding: '4px 10px', borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontSize: 11, cursor: 'pointer' }}
-                            >
-                              ביטול
-                            </button>
-                            <button
-                              disabled={addSelected.length === 0 || addSaving}
-                              onClick={() => handleAddMembers(list.id)}
-                              style={{ padding: '4px 12px', borderRadius: 5, border: 'none', background: addSelected.length > 0 ? C.accent : C.border, color: '#fff', fontSize: 11, fontWeight: 600, cursor: addSelected.length > 0 && !addSaving ? 'pointer' : 'not-allowed', opacity: addSaving ? 0.7 : 1 }}
-                            >
-                              {addSaving ? 'שומר...' : 'הוסף'}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={e => { e.stopPropagation(); setAddToListId(list.id); setAddSelected([]); }}
-                          style={{ marginTop: 8, padding: '4px 0', borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.accent, fontSize: 11, fontWeight: 600, cursor: 'pointer', width: '100%' }}
-                        >
-                          + הוסף מוסדות
-                        </button>
-                      )}
+                      {/* Edit group — rename + add/remove institutions */}
+                      <button
+                        onClick={e => { e.stopPropagation(); setEditGroup(list); }}
+                        style={{ marginTop: 8, padding: '5px 0', borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.accent, fontSize: 11, fontWeight: 600, cursor: 'pointer', width: '100%' }}
+                      >
+                        ✏️ ערוך קבוצה
+                      </button>
                     </div>
                   );
                 })}

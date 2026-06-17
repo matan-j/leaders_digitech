@@ -20,6 +20,7 @@ import {
   type EmploymentType, type InstructorStatus, type RoleType,
 } from '@/lib/instructors/validation';
 import AddInstructorModal, { type InstructorRecord } from '@/components/crm/AddInstructorModal';
+import { supabaseErrorMessage } from '@/utils/supabaseError';
 import FindMatchingInstructorDialog from '@/components/crm/FindMatchingInstructorDialog';
 import AssignInstructorPlanningDialog from '@/components/crm/AssignInstructorPlanningDialog';
 
@@ -138,7 +139,7 @@ const CRMInstructor = () => {
       .eq('id', instructor.id);
     setSavingRating(false);
     if (error) {
-      toast.error('שמירה נכשלה');
+      toast.error(`שמירה נכשלה: ${supabaseErrorMessage(error)}`);
       return;
     }
     toast.success('דירוג עודכן');
@@ -155,7 +156,7 @@ const CRMInstructor = () => {
       .eq('id', instructor.id);
     setNotesSaving(false);
     if (error) {
-      toast.error('שמירה נכשלה');
+      toast.error(`שמירה נכשלה: ${supabaseErrorMessage(error)}`);
       return;
     }
     setInstructor({ ...instructor, notes });

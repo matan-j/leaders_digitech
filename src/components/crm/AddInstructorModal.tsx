@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Loader2, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { supabaseErrorMessage } from '@/utils/supabaseError';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -210,8 +211,7 @@ const AddInstructorModal = ({ open, onOpenChange, editing, onSaved }: Props) => 
       onOpenChange(false);
     } catch (err) {
       console.error('save instructor failed', err);
-      const msg = err instanceof Error ? err.message : 'שגיאה לא ידועה';
-      toast.error(`שמירה נכשלה: ${msg}`);
+      toast.error(`שמירה נכשלה: ${supabaseErrorMessage(err)}`);
     } finally {
       setSaving(false);
     }

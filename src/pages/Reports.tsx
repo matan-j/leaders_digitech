@@ -469,10 +469,10 @@ const Reports = () => {
       rangeEnd.setUTCHours(23, 59, 59, 999);
       const { data, error } = await supabase
         .from('lesson_reports')
-        .select('id, instructor_id, lessons_count, instructor:instructor_id(id, full_name)')
+        .select('id, instructor_id, lessons_count, instructor:instructor_id(id, full_name), lesson_schedules!inner(scheduled_start)')
         .eq('is_completed', true)
-        .gte('created_at', rangeStart.toISOString())
-        .lte('created_at', rangeEnd.toISOString());
+        .gte('lesson_schedules.scheduled_start', rangeStart.toISOString())
+        .lte('lesson_schedules.scheduled_start', rangeEnd.toISOString());
 
       console.log('SALARY DATA RAW:', JSON.stringify(data?.slice(0,3)));
 
@@ -556,7 +556,7 @@ const Reports = () => {
 
       for (const r of sorted) {
         const isPending = r.lesson_status === 'not_reported';
-        const dateRaw = isPending ? r.scheduled_date : r.created_at;
+        const dateRaw = isPending ? r.scheduled_date : (r.scheduled_start || r.created_at);
         const dateStr = dateRaw
           ? new Date(dateRaw).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' })
           : '—';
@@ -631,7 +631,7 @@ const Reports = () => {
 
         for (const r of course.lesson_details) {
           const isPending = r.lesson_status === 'not_reported';
-          const dateRaw = isPending ? r.scheduled_date : r.created_at;
+          const dateRaw = isPending ? r.scheduled_date : (r.scheduled_start || r.created_at);
           const dateStr = dateRaw
             ? new Date(dateRaw).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' })
             : '—';
@@ -823,9 +823,30 @@ const Reports = () => {
 
       if (error) throw error;
 
+      const allReports = reports ?? [];
+
+      // Deduplicate by lesson_schedule_id: prefer completed over not-completed, then latest created_at
+      const scheduleReportMap = new Map<string, (typeof allReports)[number]>();
+      for (const report of allReports) {
+        const key = report.lesson_schedule_id;
+        if (!key) continue;
+        const cur = scheduleReportMap.get(key);
+        if (
+          !cur ||
+          (report.is_completed !== false && cur.is_completed === false) ||
+          (report.is_completed === cur.is_completed && report.created_at > cur.created_at)
+        ) {
+          scheduleReportMap.set(key, report);
+        }
+      }
+      const deduplicatedReports = [
+        ...scheduleReportMap.values(),
+        ...allReports.filter(r => !r.lesson_schedule_id),
+      ];
+
       const instructorMap = new Map<string, InstructorReport>();
 
-      for (const report of reports || []) {
+      for (const report of deduplicatedReports) {
         const instructorId = report.instructor_id;
         const instructor = report.instructor;
         
@@ -838,7 +859,7 @@ const Reports = () => {
         let courseInstanceId: string | undefined = report.course_instance_id || undefined;
         let scheduledStart: string | undefined;
         let scheduledEnd: string | undefined;
-        let actualHours = 1; // Default fallback
+        let actualHours = 1.5; // Default fallback (standard lesson)
 
         if (report.course_instances) {
           totalStudents = report.course_instances.students?.length || 0;
@@ -919,7 +940,7 @@ const Reports = () => {
         instructorReport.reports.push(lessonDetail);
         instructorReport.total_reports += 1;
         instructorReport.total_lessons += lessonDetail.lessons_count;
-        instructorReport.total_hours += actualHours;
+        instructorReport.total_hours += report.is_completed !== false ? actualHours : 0;
         instructorReport.total_salary += lessonDetail.hourly_rate;
       }
 
@@ -988,10 +1009,31 @@ const Reports = () => {
       console.log('FETCH PARAMS', startDate, endDate);
       console.log('RAW LESSON REPORTS', reports?.length, (JSON.stringify(reports?.[0]) || '').slice(0, 300));
 
+      const allReportsInst = reports ?? [];
+
+      // Deduplicate by lesson_schedule_id: prefer completed over not-completed, then latest created_at
+      const scheduleReportMapInst = new Map<string, (typeof allReportsInst)[number]>();
+      for (const report of allReportsInst) {
+        const key = report.lesson_schedule_id;
+        if (!key) continue;
+        const cur = scheduleReportMapInst.get(key);
+        if (
+          !cur ||
+          (report.is_completed !== false && cur.is_completed === false) ||
+          (report.is_completed === cur.is_completed && report.created_at > cur.created_at)
+        ) {
+          scheduleReportMapInst.set(key, report);
+        }
+      }
+      const deduplicatedReportsInst = [
+        ...scheduleReportMapInst.values(),
+        ...allReportsInst.filter(r => !r.lesson_schedule_id),
+      ];
+
       const institutionMap = new Map<string, InstitutionReport>();
       const courseMap = new Map<string, CourseDetail>();
 
-      for (const report of reports || []) {
+      for (const report of deduplicatedReportsInst) {
         if (reports.length > 0 && reports.indexOf(report) === 0) {
           console.log('FIRST REPORT', JSON.stringify({
             schedule: report.lesson_schedules,
@@ -1070,6 +1112,7 @@ const Reports = () => {
           attendanceData,
           lesson_status: lessonStatus,
           schedule_id: report.lesson_schedule_id,
+          scheduled_start: (schedule as any).scheduled_start ?? undefined,
         };
 
         course.lesson_details.push(lessonDetail);
@@ -1227,9 +1270,9 @@ const Reports = () => {
           }
 
           // Calculate actual hours for unreported lesson
-          const actualHours = schedule.scheduled_start && schedule.scheduled_end 
+          const actualHours = schedule.scheduled_start && schedule.scheduled_end
             ? calculateLessonHours(schedule.scheduled_start, schedule.scheduled_end)
-            : 1; // Default fallback
+            : 1.5; // Default fallback (standard lesson)
 
           const unreportedLesson: LessonReportDetail = {
             id: `schedule-${schedule.id}`,
@@ -1912,7 +1955,7 @@ const Reports = () => {
                                             <span>{new Date(report.scheduled_date || '').toLocaleDateString('he-IL')}</span>
                                           </div>
                                         )
-                                        : new Date(report.created_at).toLocaleDateString('he-IL')
+                                        : new Date(report.scheduled_start || report.created_at).toLocaleDateString('he-IL')
                                       }
                                     </td>
                                   </tr>
@@ -2202,7 +2245,7 @@ const Reports = () => {
                                           <td className="py-3 px-4 text-gray-600">
                                             {lesson.lesson_status === 'not_reported' 
                                               ? `מתוכנן ל: ${new Date(lesson.scheduled_date || '').toLocaleDateString('he-IL')}`
-                                              : new Date(lesson.created_at).toLocaleDateString('he-IL')
+                                              : new Date(lesson.scheduled_start || lesson.created_at).toLocaleDateString('he-IL')
                                             }
                                           </td>
                                           <td className="py-3 px-4">

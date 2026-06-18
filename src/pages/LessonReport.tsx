@@ -112,7 +112,7 @@ const LessonReport = (props: LessonReportProps = {}) => {
   const [instructorsList, setInstructorsList] = useState<any[]>([]);
 
 
-const [selectAll, setSelectAll] = useState(false);
+const [selectAll, setSelectAll] = useState(true);
 const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
 const [editedName, setEditedName] = useState("");
 
@@ -245,7 +245,7 @@ const handleExcelUpload = async (event: React.ChangeEvent<HTMLInputElement>) => 
     const newStudents = extractedNames.map(name => ({
       id: `temp_${Date.now()}_${Math.random()}`,
       name: name,
-      isPresent: false,
+      isPresent: true,
       isNew: true,
     }));
 
@@ -449,7 +449,7 @@ const handleExcelUpload = async (event: React.ChangeEvent<HTMLInputElement>) => 
         const initialAttendanceList = existingStudents.map((student) => ({
           id: student.id,
           name: student.full_name,
-          isPresent: false,
+          isPresent: true,
           isNew: false,
         }));
         console.log("Initial attendance list:", initialAttendanceList);
@@ -491,7 +491,7 @@ const handleExcelUpload = async (event: React.ChangeEvent<HTMLInputElement>) => 
     const newStudent = {
       id: `temp_${Date.now()}`,
       name: trimmedName,
-      isPresent: false,
+      isPresent: true,
       isNew: true,
     };
 

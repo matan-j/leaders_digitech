@@ -7,6 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import AssignInstructorModal from './AssignInstructorModal';
 import type { CRMTab } from '@/pages/CRM';
 import { CRM_CUSTOMER_CLASS, CRM_LEAD_CLASS, CRM_SOFT_DELETE_FILTER } from '@/lib/crmQueryHelpers';
+import { matchesLeadSearch } from '@/utils/leadSearch';
 
 const C = {
   bg: '#F7F8FC',
@@ -1030,7 +1031,11 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
   const [deleteToast, setDeleteToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [inlineEditError, setInlineEditError] = useState<string | null>(null);
 
+  // `search` = the committed query that actually filters the list (and is persisted).
+  // `searchInput` = the live text-field draft; it only becomes `search` on
+  // clicking "חיפוש" or pressing Enter, so we never filter/refetch per keystroke.
   const [search, setSearch] = useState(persistedTableState.search);
+  const [searchInput, setSearchInput] = useState(persistedTableState.search);
   const [filterClass, setFilterClass] = useState(persistedTableState.filterClass);
   const [filterStage, setFilterStage] = useState(persistedTableState.filterStage);
   const [filterCity, setFilterCity] = useState(persistedTableState.filterCity);
@@ -1195,7 +1200,10 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
 
   const filtered = sortRows(
     rows.filter((r) => {
-      if (search && !r.name.includes(search) && !(r.city ?? '').includes(search)) return false;
+      if (search && !matchesLeadSearch(
+        { name: r.name, city: r.city, phones: [r.primaryPhone, ...r.contacts.map((c) => c.phone)] },
+        search,
+      )) return false;
       if (filterClass !== 'הכל' && (mode === 'leads' ? (r.crm_class ?? CRM_LEAD_CLASS) : r.crm_class) !== filterClass) return false;
       if (mode === 'leads' && filterStage !== 'הכל' && getEffectiveStage(r) !== filterStage) return false;
       if (filterCity !== 'הכל' && r.city !== filterCity) return false;
@@ -1221,6 +1229,15 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
 
   const unassignedCount = rows.filter((r) => !r.instructor).length;
   const hasActiveFilters = filterClass !== 'הכל' || filterStage !== 'הכל' || filterCity !== 'הכל' || filterInstructor !== 'הכל' || filterSchoolLevel !== 'הכל' || filterContactStatus !== 'הכל';
+
+  // Commit the draft text to the active query (Enter / "חיפוש" button).
+  const applySearch = () => setSearch(searchInput.trim());
+
+  // Clear only the text search — dropdown filters stay as they are.
+  const clearSearch = () => {
+    setSearchInput('');
+    setSearch('');
+  };
 
   const clearFilters = () => {
     setFilterClass('הכל');
@@ -1509,12 +1526,35 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="🔍  חיפוש לפי שם / עיר..."
-          style={{ padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 13, width: 210, outline: 'none', color: C.text }}
-        />
+        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+          <input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); applySearch(); }
+            }}
+            placeholder="🔍  חיפוש לפי שם, עיר או טלפון"
+            style={{ padding: '7px 30px 7px 12px', border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 13, width: 230, outline: 'none', color: C.text }}
+          />
+          {searchInput && (
+            <button
+              type="button"
+              onClick={clearSearch}
+              title="נקה חיפוש"
+              aria-label="נקה חיפוש"
+              style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'transparent', color: C.textDim, fontSize: 14, lineHeight: 1, cursor: 'pointer', padding: 2 }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={applySearch}
+          style={{ padding: '7px 16px', borderRadius: 6, border: 'none', background: C.accent, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+        >
+          חיפוש
+        </button>
         <select value={filterClass} onChange={(e) => setFilterClass(e.target.value)} style={filterSelectStyle(filterClass !== 'הכל')}>
           <option value="הכל">{mode === 'leads' ? 'סיווג' : 'סטטוס'}</option>
           {CLASSES.map((o) => <option key={o}>{o}</option>)}

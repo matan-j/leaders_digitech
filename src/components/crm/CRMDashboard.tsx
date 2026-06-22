@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { callCrmAI } from '@/hooks/useCrmAI';
 import type { CRMTab } from '@/pages/CRM';
 import { CRM_LEAD_CLASS, CRM_CUSTOMER_CLASS, CRM_SOFT_DELETE_FILTER } from '@/lib/crmQueryHelpers';
+import GrowthMissionWidget from '@/components/dashboard/GrowthMissionWidget';
 
 const C = {
   bg: '#F7F8FC',
@@ -305,6 +306,11 @@ const CRMDashboard = ({ setTab, onOpenCsvImport }: Props) => {
 
   return (
     <div dir="rtl" style={{ padding: '20px 24px', overflowY: 'auto' }}>
+      {/* Growth Copilot — daily mission */}
+      <div style={{ marginBottom: 18 }}>
+        <GrowthMissionWidget />
+      </div>
+
       {/* Overdue alert */}
       {kpis.overdueFollowups > 0 && (
         <div style={{

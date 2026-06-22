@@ -15,6 +15,11 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/crm-whatsapp-webhook/index.ts"
 
+[functions.growth-copilot]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/growth-copilot/index.ts"
+
 [functions.notify-admins-on-feedback]
 enabled = true
 verify_jwt = true

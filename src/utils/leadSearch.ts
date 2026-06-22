@@ -34,19 +34,23 @@ export const MIN_PHONE_QUERY_DIGITS = 3;
 export interface LeadSearchable {
   name: string | null | undefined;
   city: string | null | undefined;
-  /** Any phone numbers associated with the lead (primary + all contacts). */
+  /** Names of the primary contact and any additional CRM contacts. */
+  contactNames?: (string | null | undefined)[];
+  /** Any phone numbers associated with the lead (primary contact + all contacts). */
   phones: (string | null | undefined)[];
 }
 
 /**
- * Returns true when `query` matches the lead on ANY of: name, city, or phone (OR).
+ * Returns true when `query` matches the lead on ANY of: institution name, city,
+ * a contact person's name, or a phone number (OR).
  *
- * - Name / city: partial, case-insensitive, Hebrew-safe substring match.
+ * - Name / city / contact names: partial, case-insensitive, Hebrew-safe substring.
  * - Phone: both query and stored numbers are normalized (see {@link normalizePhone})
  *   before a partial match, so formatting and country-prefix differences are ignored.
  *   Partial matching means trailing-digit queries (e.g. "4623774") still match.
  *
- * An empty / whitespace-only query matches everything (no filtering applied).
+ * Operates per institution, so a row matches once regardless of how many of its
+ * contacts match. An empty / whitespace-only query matches everything.
  */
 export const matchesLeadSearch = (lead: LeadSearchable, query: string): boolean => {
   const term = (query ?? '').trim();
@@ -60,9 +64,15 @@ export const matchesLeadSearch = (lead: LeadSearchable, query: string): boolean 
   const cityMatch = (lead.city ?? '').toLowerCase().includes(lower);
   if (cityMatch) return true;
 
+  // Contact person names (primary contact + any additional CRM contacts).
+  const contactNameMatch = (lead.contactNames ?? []).some(
+    (n) => (n ?? '').toLowerCase().includes(lower),
+  );
+  if (contactNameMatch) return true;
+
   // Only attempt phone matching when the query has enough digits to be
-  // meaningful. An empty result (pure text) or a 1–2 digit query would match
-  // far too broadly, so we skip phone matching and rely on name/city above.
+  // meaningful. A pure-text query or a 1–2 digit query would match far too
+  // broadly, so we skip phone matching and rely on the text matches above.
   const queryPhone = normalizePhone(term);
   if (queryPhone.length >= MIN_PHONE_QUERY_DIGITS) {
     return lead.phones.some((p) => {

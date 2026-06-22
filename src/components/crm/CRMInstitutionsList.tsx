@@ -570,6 +570,103 @@ const SchoolLevelDropdown = ({ value, onChange }: SchoolLevelDropdownProps) => {
   );
 };
 
+// ── City filter dropdown (searchable, local-only) ────────────
+
+interface CityFilterDropdownProps {
+  cities: string[];
+  value: string;                       // 'הכל' = no filter, else the selected city
+  onChange: (city: string) => void;    // pass 'הכל' to reset
+}
+
+const CityFilterDropdown = ({ cities, value, onChange }: CityFilterDropdownProps) => {
+  const [open, setOpen] = useState(false);
+  const [cityQuery, setCityQuery] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const active = value !== 'הכל';
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    // focus the internal search field when the menu opens
+    const t = setTimeout(() => inputRef.current?.focus(), 0);
+    return () => { document.removeEventListener('mousedown', handler); clearTimeout(t); };
+  }, [open]);
+
+  // Local-only filtering of the city OPTIONS — never hits the network.
+  const q = cityQuery.trim().toLowerCase();
+  const visibleCities = q ? cities.filter((c) => c.toLowerCase().includes(q)) : cities;
+
+  const select = (city: string) => {
+    onChange(city);
+    setOpen(false);
+    setCityQuery('');
+  };
+
+  return (
+    <div style={{ position: 'relative' }} ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          padding: '6px 10px', borderRadius: 6,
+          border: `1px solid ${active ? C.accent : C.border}`,
+          background: active ? C.accentBg : C.surface,
+          color: active ? C.accent : C.textSub,
+          fontSize: 12, cursor: 'pointer', outline: 'none',
+          fontWeight: active ? 600 : 400, display: 'inline-flex', alignItems: 'center', gap: 5,
+        }}
+      >
+        {active ? value : 'עיר'}
+        <span style={{ fontSize: 9, color: active ? C.accent : C.textDim }}>▼</span>
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', right: 0, zIndex: 200, marginTop: 4,
+          background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.13)', overflow: 'hidden', width: 200,
+        }}>
+          <div style={{ padding: 8, borderBottom: `1px solid ${C.borderLight}` }}>
+            <input
+              ref={inputRef}
+              value={cityQuery}
+              onChange={(e) => setCityQuery(e.target.value)}
+              placeholder="חיפוש עיר..."
+              style={{ width: '100%', padding: '6px 9px', border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, outline: 'none', color: C.text, boxSizing: 'border-box' }}
+            />
+          </div>
+          <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+            <div
+              onClick={() => select('הכל')}
+              style={{ padding: '7px 12px', fontSize: 12, cursor: 'pointer', color: !active ? C.accent : C.textSub, fontWeight: !active ? 600 : 400, background: !active ? C.bg : undefined }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = C.bg)}
+              onMouseLeave={(e) => (e.currentTarget.style.background = !active ? C.bg : '')}
+            >
+              כל הערים
+            </div>
+            {visibleCities.length === 0 ? (
+              <div style={{ padding: '10px 12px', fontSize: 12, color: C.textDim, textAlign: 'center' }}>לא נמצאו ערים</div>
+            ) : visibleCities.map((c) => (
+              <div
+                key={c}
+                onClick={() => select(c)}
+                style={{ padding: '7px 12px', fontSize: 12, cursor: 'pointer', color: C.text, background: c === value ? C.bg : undefined }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = C.bg)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = c === value ? C.bg : '')}
+              >
+                {c}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── CSV modal ────────────────────────────────────────────────
 
 const TEMPLATE_FIELDS = ['שם מוסד', 'עיר', 'סוג', 'איש קשר', 'תפקיד', 'טלפון', 'אימייל'] as const;
@@ -1201,7 +1298,12 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
   const filtered = sortRows(
     rows.filter((r) => {
       if (search && !matchesLeadSearch(
-        { name: r.name, city: r.city, phones: [r.primaryPhone, ...r.contacts.map((c) => c.phone)] },
+        {
+          name: r.name,
+          city: r.city,
+          contactNames: r.contacts.map((c) => c.name),
+          phones: [r.primaryPhone, ...r.contacts.map((c) => c.phone)],
+        },
         search,
       )) return false;
       if (filterClass !== 'הכל' && (mode === 'leads' ? (r.crm_class ?? CRM_LEAD_CLASS) : r.crm_class) !== filterClass) return false;
@@ -1565,10 +1667,7 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
             {stageFilterOptions.map((o) => <option key={o}>{o}</option>)}
           </select>
         )}
-        <select value={filterCity} onChange={(e) => setFilterCity(e.target.value)} style={filterSelectStyle(filterCity !== 'הכל')}>
-          <option value="הכל">עיר</option>
-          {cities.map((o) => <option key={o}>{o}</option>)}
-        </select>
+        <CityFilterDropdown cities={cities} value={filterCity} onChange={setFilterCity} />
         <select value={filterInstructor} onChange={(e) => setFilterInstructor(e.target.value)} style={filterSelectStyle(filterInstructor !== 'הכל')}>
           <option value="הכל">מדריך</option>
           <option value="לא משויך">לא משויך</option>

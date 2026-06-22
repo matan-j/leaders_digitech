@@ -5,16 +5,19 @@ import { normalizePhone, matchesLeadSearch, type LeadSearchable } from './leadSe
 const rabin: LeadSearchable = {
   name: 'רבין אזור',
   city: 'אזור',
+  contactNames: ['מאור כהן', 'דנה לוי'],
   phones: ['052-462-3774'],
 };
 const herzl: LeadSearchable = {
   name: 'הרצל תל אביב',
   city: 'תל אביב',
+  contactNames: ['ישראל ויני'],
   phones: ['+972 54 123 4567', null],
 };
 const weizmann: LeadSearchable = {
   name: 'ויצמן רחובות',
   city: 'רחובות',
+  contactNames: [],
   phones: [],
 };
 
@@ -49,6 +52,28 @@ describe('matchesLeadSearch', () => {
   it('2. matches by city', () => {
     expect(search('רחובות')).toEqual([weizmann]);
     expect(search('תל אביב')).toEqual([herzl]);
+  });
+
+  it('matches by contact person name (primary or additional), partial Hebrew', () => {
+    expect(search('מאור')).toEqual([rabin]);     // primary contact, partial
+    expect(search('דנה')).toEqual([rabin]);       // additional contact
+    expect(search('ויני')).toEqual([herzl]);      // partial, mid-word
+  });
+
+  it('returns the institution once even when multiple of its contacts match', () => {
+    // "כהן" + "לוי" share rabin; the query "מאור" only hits one contact but a
+    // broad term across two contacts must still yield a single row.
+    const broad: LeadSearchable = {
+      name: 'מוסד', city: 'חיפה',
+      contactNames: ['אבי כהן', 'בני כהן', 'גדי כהן'],
+      phones: [],
+    };
+    expect(matchesLeadSearch(broad, 'כהן')).toBe(true); // single boolean → one row
+  });
+
+  it('missing/empty contactNames is safe (backward compatible)', () => {
+    expect(matchesLeadSearch({ name: 'בית ספר', city: 'עכו', phones: [] }, 'עכו')).toBe(true);
+    expect(matchesLeadSearch({ name: 'בית ספר', city: 'עכו', phones: [] }, 'נדב')).toBe(false);
   });
 
   it('3. matches a phone entered with hyphens/spaces regardless of stored formatting', () => {

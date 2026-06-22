@@ -115,17 +115,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const today = israelDate(new Date());
-
-    // ── Idempotency: one mission per day unless force ──────────
-    const { data: existing } = await supabase
-      .from('growth_mission_runs')
-      .select('*')
-      .eq('run_date', today)
-      .maybeSingle();
-
-    if (existing && !force) {
-      return jsonResponse({ ok: true, already_exists: true, mission: existing });
-    }
+    void force; // multiple missions/day are allowed — always create a new one
 
     // ── Previous mission (for "skip if unfinished" rule) ───────
     let previous: PreviousMission | null = null;
@@ -230,7 +220,7 @@ Deno.serve(async (req) => {
 
     const { data: saved, error: saveErr } = await supabase
       .from('growth_mission_runs')
-      .upsert(missionRow, { onConflict: 'run_date' })
+      .insert(missionRow)
       .select('*')
       .single();
     if (saveErr) {

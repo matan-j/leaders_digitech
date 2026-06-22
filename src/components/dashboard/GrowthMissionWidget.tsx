@@ -3,8 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Brain, Sparkles, Copy, Check, Target, Loader2 } from 'lucide-react';
-import { useGrowthCopilot } from '@/hooks/useGrowthCopilot';
+import { Brain, Sparkles, Copy, Check, Target, Loader2, Plus } from 'lucide-react';
+import { useGrowthCopilot, type GrowthMission } from '@/hooks/useGrowthCopilot';
 import UpdateGoalsModal from './UpdateGoalsModal';
 
 const GOAL_LABELS: Record<string, string> = {
@@ -26,17 +26,9 @@ const STATUS_BUTTONS: { key: 'started' | 'done' | 'blocked' | 'needs_followup'; 
 ];
 
 export default function GrowthMissionWidget({ entity = 'Digitech' }: { entity?: string }) {
-  const { mission, goals, loading, generating, error, generateNow, updateStatus, saveGoal, deleteGoal } =
+  const { missions, goals, loading, generating, error, generateNow, updateStatus, saveGoal, deleteGoal } =
     useGrowthCopilot(entity);
   const [goalsOpen, setGoalsOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const copyReady = async () => {
-    if (!mission?.ready_message) return;
-    await navigator.clipboard.writeText(mission.ready_message);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   return (
     <Card dir="rtl" className="border-violet-200 shadow-brand-md">
@@ -71,75 +63,47 @@ export default function GrowthMissionWidget({ entity = 'Digitech' }: { entity?: 
           </div>
         )}
 
-        {/* Mission body */}
+        {/* Body */}
         {loading ? (
           <div className="flex items-center justify-center py-8 text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin ml-2" /> טוען...
           </div>
-        ) : !mission ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-6 text-center">
-            <div className="text-3xl">🧠</div>
-            <p className="text-sm text-muted-foreground max-w-xs">
-              עדיין אין משימה להיום. צרו משימת צמיחה אסטרטגית אחת — מבוססת על היעדים ומצב ה-CRM.
-            </p>
-            <Button onClick={generateNow} disabled={generating} className="bg-violet-600 hover:bg-violet-700">
-              {generating ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Sparkles className="h-4 w-4 ml-1" />}
-              צור משימה עכשיו
-            </Button>
-            {error && <p className="text-xs text-destructive">שגיאה: {error}</p>}
-          </div>
+        ) : missions.length === 0 ? (
+          generating ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-8 text-violet-700">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <p className="text-sm">בונה לך משימת צמיחה להיום...</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-3 py-6 text-center">
+              <div className="text-3xl">🧠</div>
+              <p className="text-sm text-muted-foreground max-w-xs">
+                עדיין אין משימה להיום. צרו משימת צמיחה אסטרטגית — מבוססת על היעדים ומצב ה-CRM.
+              </p>
+              <Button onClick={() => generateNow().catch(() => {})} disabled={generating} className="bg-violet-600 hover:bg-violet-700">
+                <Sparkles className="h-4 w-4 ml-1" /> צור משימה עכשיו
+              </Button>
+              {error && <p className="text-xs text-destructive">שגיאה: {error}</p>}
+            </div>
+          )
         ) : (
           <div className="space-y-3">
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="font-bold text-violet-900 text-sm md:text-base">{mission.mission_title}</h3>
-              {mission.impact_score != null && (
-                <Badge variant="secondary" className="bg-violet-100 text-violet-700 shrink-0">
-                  אימפקט {mission.impact_score}/10
-                </Badge>
-              )}
-            </div>
+            {missions.map((m) => (
+              <MissionCard key={m.id} mission={m} onStatus={updateStatus} />
+            ))}
 
-            <div className="space-y-2 text-sm">
-              {mission.why_it_matters && <Row label="למה זה חשוב" value={mission.why_it_matters} />}
-              {mission.what_to_do && <Row label="מה עושים עכשיו" value={mission.what_to_do} />}
-              {mission.how_to_do_it && <Row label="איך עושים את זה" value={mission.how_to_do_it} />}
-              {mission.success_criteria && <Row label="מה נחשב הצלחה" value={mission.success_criteria} />}
-            </div>
+            {error && <p className="text-xs text-destructive">שגיאה: {error}</p>}
 
-            {/* Ready-to-copy message */}
-            {mission.ready_message && (
-              <div className="bg-muted rounded-lg p-3">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-muted-foreground">הודעה מוכנה</span>
-                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={copyReady}>
-                    {copied ? <Check className="h-3.5 w-3.5 ml-1 text-green-600" /> : <Copy className="h-3.5 w-3.5 ml-1" />}
-                    {copied ? 'הועתק' : 'העתק'}
-                  </Button>
-                </div>
-                <p className="text-sm whitespace-pre-wrap leading-relaxed">{mission.ready_message}</p>
-              </div>
-            )}
-
-            {/* Status buttons */}
-            <div className="flex flex-wrap gap-2 pt-1">
-              {STATUS_BUTTONS.map((b) => (
-                <Button
-                  key={b.key}
-                  size="sm"
-                  variant={mission.status === b.key ? 'default' : 'outline'}
-                  className={mission.status === b.key ? 'bg-violet-600 hover:bg-violet-700' : ''}
-                  onClick={() => updateStatus(b.key)}
-                >
-                  {b.label}
-                </Button>
-              ))}
-            </div>
-
-            {/* Regenerate (admin convenience) */}
-            <div className="flex justify-end">
-              <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={generateNow} disabled={generating}>
-                {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin ml-1" /> : <Sparkles className="h-3.5 w-3.5 ml-1" />}
-                צור מחדש
+            {/* Create another mission */}
+            <div className="flex justify-center pt-1">
+              <Button
+                variant="outline" size="sm"
+                onClick={() => generateNow().catch(() => {})}
+                disabled={generating}
+                className="text-violet-700 border-violet-300"
+              >
+                {generating ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Plus className="h-4 w-4 ml-1" />}
+                צור משימה נוספת
               </Button>
             </div>
           </div>
@@ -154,6 +118,70 @@ export default function GrowthMissionWidget({ entity = 'Digitech' }: { entity?: 
         onDelete={deleteGoal}
       />
     </Card>
+  );
+}
+
+function MissionCard({
+  mission,
+  onStatus,
+}: {
+  mission: GrowthMission;
+  onStatus: (id: string, status: 'started' | 'done' | 'blocked' | 'needs_followup') => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const copyReady = async () => {
+    if (!mission.ready_message) return;
+    await navigator.clipboard.writeText(mission.ready_message);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="border border-violet-100 rounded-xl p-3 space-y-3 bg-violet-50/30">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="font-bold text-violet-900 text-sm md:text-base">{mission.mission_title}</h3>
+        {mission.impact_score != null && (
+          <Badge variant="secondary" className="bg-violet-100 text-violet-700 shrink-0">
+            אימפקט {mission.impact_score}/10
+          </Badge>
+        )}
+      </div>
+
+      <div className="space-y-2 text-sm">
+        {mission.why_it_matters && <Row label="למה זה חשוב" value={mission.why_it_matters} />}
+        {mission.what_to_do && <Row label="מה עושים עכשיו" value={mission.what_to_do} />}
+        {mission.how_to_do_it && <Row label="איך עושים את זה" value={mission.how_to_do_it} />}
+        {mission.success_criteria && <Row label="מה נחשב הצלחה" value={mission.success_criteria} />}
+      </div>
+
+      {mission.ready_message && (
+        <div className="bg-muted rounded-lg p-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-muted-foreground">הודעה מוכנה</span>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={copyReady}>
+              {copied ? <Check className="h-3.5 w-3.5 ml-1 text-green-600" /> : <Copy className="h-3.5 w-3.5 ml-1" />}
+              {copied ? 'הועתק' : 'העתק'}
+            </Button>
+          </div>
+          <p className="text-sm whitespace-pre-wrap leading-relaxed">{mission.ready_message}</p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        {STATUS_BUTTONS.map((b) => (
+          <Button
+            key={b.key}
+            size="sm"
+            variant={mission.status === b.key ? 'default' : 'outline'}
+            className={mission.status === b.key ? 'bg-violet-600 hover:bg-violet-700' : ''}
+            onClick={() => onStatus(mission.id, b.key)}
+          >
+            {b.label}
+          </Button>
+        ))}
+      </div>
+    </div>
   );
 }
 

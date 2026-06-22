@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 // NOTE: the growth_* / ceo_goals / ai_preferences tables are not yet in the
@@ -25,6 +25,7 @@ export interface GrowthMission {
   impact_score: number | null;
   status: MissionStatus;
   outcome_notes: string | null;
+  created_at?: string;
 }
 
 export interface CeoGoal {
@@ -58,20 +59,22 @@ function israelToday(): string {
 }
 
 export function useGrowthCopilot(entity = 'Digitech') {
-  const [mission, setMission] = useState<GrowthMission | null>(null);
+  const [missions, setMissions] = useState<GrowthMission[]>([]);
   const [goals, setGoals] = useState<CeoGoal[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autoTried = useRef(false); // auto-generate at most once per mount
 
-  const loadMission = useCallback(async () => {
+  const loadMissions = useCallback(async () => {
     const { data } = await db
       .from('growth_mission_runs')
       .select('*')
       .eq('run_date', israelToday())
       .eq('entity', entity)
-      .maybeSingle();
-    setMission((data as GrowthMission) ?? null);
+      .order('created_at', { ascending: false });
+    setMissions((data as GrowthMission[]) ?? []);
+    return (data as GrowthMission[]) ?? [];
   }, [entity]);
 
   const loadGoals = useCallback(async () => {
@@ -87,15 +90,15 @@ export function useGrowthCopilot(entity = 'Digitech') {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      await Promise.all([loadMission(), loadGoals()]);
+      await Promise.all([loadMissions(), loadGoals()]);
     } finally {
       setLoading(false);
     }
-  }, [loadMission, loadGoals]);
+  }, [loadMissions, loadGoals]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  // Manually generate today's mission via the edge function.
+  // Generate a new mission via the edge function (always creates a new one).
   const generateNow = useCallback(async () => {
     setGenerating(true);
     setError(null);
@@ -109,12 +112,12 @@ export function useGrowthCopilot(entity = 'Digitech') {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${session?.access_token ?? ''}`,
           },
-          body: JSON.stringify({ action: 'generate_mission', entity, force: true, send_telegram: true }),
+          body: JSON.stringify({ action: 'generate_mission', entity, send_telegram: true }),
         },
       );
       const json = await res.json();
       if (!json.ok) throw new Error(json.error ?? 'generation_failed');
-      await loadMission();
+      await loadMissions();
       return json;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -123,21 +126,29 @@ export function useGrowthCopilot(entity = 'Digitech') {
     } finally {
       setGenerating(false);
     }
-  }, [entity, loadMission]);
+  }, [entity, loadMissions]);
 
-  // Update mission status from the UI buttons → both growth_mission_runs and the linked task.
-  const updateStatus = useCallback(async (uiStatus: keyof typeof STATUS_MAP) => {
-    if (!mission) return;
-    const map = STATUS_MAP[uiStatus];
-    if (!map) return;
-    // optimistic
-    setMission({ ...mission, status: map.mission });
-    await db.from('growth_mission_runs').update({ status: map.mission }).eq('id', mission.id);
-    if (mission.task_id) {
-      await db.from('tasks').update({ status: map.task }).eq('id', mission.task_id);
+  // Auto-generate the first mission of the day if none exists yet.
+  useEffect(() => {
+    if (loading || generating || autoTried.current) return;
+    if (missions.length === 0 && !error) {
+      autoTried.current = true;
+      generateNow().catch(() => { /* surfaced via `error` */ });
     }
-    await loadMission();
-  }, [mission, loadMission]);
+  }, [loading, generating, missions.length, error, generateNow]);
+
+  // Update one mission's status → both growth_mission_runs and its linked task.
+  const updateStatus = useCallback(async (missionId: string, uiStatus: keyof typeof STATUS_MAP) => {
+    const map = STATUS_MAP[uiStatus];
+    const m = missions.find((x) => x.id === missionId);
+    if (!map || !m) return;
+    setMissions((prev) => prev.map((x) => (x.id === missionId ? { ...x, status: map.mission } : x)));
+    await db.from('growth_mission_runs').update({ status: map.mission }).eq('id', missionId);
+    if (m.task_id) {
+      await db.from('tasks').update({ status: map.task }).eq('id', m.task_id);
+    }
+    await loadMissions();
+  }, [missions, loadMissions]);
 
   const saveGoal = useCallback(async (goal: Partial<CeoGoal>) => {
     const payload = { entity, ...goal };
@@ -155,7 +166,7 @@ export function useGrowthCopilot(entity = 'Digitech') {
   }, [loadGoals]);
 
   return {
-    mission, goals, loading, generating, error,
+    missions, goals, loading, generating, error,
     generateNow, updateStatus, saveGoal, deleteGoal, refresh,
   };
 }

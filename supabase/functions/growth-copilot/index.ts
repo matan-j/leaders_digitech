@@ -69,7 +69,9 @@ async function callClaude(prompt: string): Promise<string> {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      // Sonnet 4.6 — best balance of intelligence, speed and cost for daily
+      // strategic missions, Hebrew explanations and CRM-context reasoning.
+      model: 'claude-sonnet-4-6',
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],
     }),

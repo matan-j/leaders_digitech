@@ -112,7 +112,7 @@ interface PipelineStageOption {
   name: string;
 }
 
-type InstitutionPatch = Partial<Pick<InstitutionRow, 'name' | 'city' | 'crm_stage' | 'crm_last_contact_at' | 'school_level'>>;
+type InstitutionPatch = Partial<Pick<InstitutionRow, 'city' | 'crm_stage' | 'crm_last_contact_at' | 'school_level'>>;
 type ContactPatch = Partial<Pick<CRMContact, 'name' | 'role' | 'phone'>>;
 
 // ── sort types ────────────────────────────────────────────────
@@ -1735,18 +1735,9 @@ const CRMInstitutionsList = ({ setTab: _setTab, mode, openCsvImport }: Props) =>
                     onClick={() => navigate(`/crm/institution/${row.id}`)}
                   >
                     {/* Institution name */}
-                    <td style={{ padding: '9px 12px' }} onClick={(e) => e.stopPropagation()}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <InlineTextCell
-                          value={row.name}
-                          placeholder="שם מוסד"
-                          onSave={(value) => {
-                            const trimmed = value.trim();
-                            if (!trimmed) return;
-                            updateInstitutionField(row.id, { name: trimmed });
-                          }}
-                          style={{ fontSize: 13, fontWeight: 600, color: C.accent }}
-                        />
+                    <td style={{ padding: '9px 12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: C.accent }}>
+                        <span>{row.name}</span>
                         {row.has_files && (
                           <button
                             type="button"

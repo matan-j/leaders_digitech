@@ -514,6 +514,7 @@ const EditActivityModal = ({ activity, contacts, opportunities, onClose, onSaved
 interface EditInstitutionModalProps { institution: Institution; pipelineStageNames: string[]; onClose: () => void; onSaved: (updated: Partial<Institution>) => void; }
 const EditInstitutionModal = ({ institution, pipelineStageNames, onClose, onSaved }: EditInstitutionModalProps) => {
   const [form, setForm] = useState({
+    name: institution.name ?? '',
     crm_class: institution.crm_class ?? '',
     crm_stage: institution.crm_stage ?? '',
     crm_risk: institution.crm_risk ?? '',
@@ -535,8 +536,10 @@ const EditInstitutionModal = ({ institution, pipelineStageNames, onClose, onSave
   ];
 
   const save = async () => {
+    if (!form.name.trim()) return;
     setSaving(true);
     const patch = {
+      name: form.name.trim(),
       crm_class: form.crm_class || null,
       crm_stage: form.crm_stage || null,
       crm_risk: form.crm_risk || null,
@@ -565,6 +568,11 @@ const EditInstitutionModal = ({ institution, pipelineStageNames, onClose, onSave
   return (
     <ModalShell title={`✏️ עריכה — ${institution.name}`} width={560} onClose={onClose} footer={<><Btn style={{ flex: 1, justifyContent: 'center' }} disabled={saving} onClick={save}>{saving ? 'שומר...' : '✓ שמור שינויים'}</Btn><Btn variant="secondary" onClick={onClose}>ביטול</Btn></>}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <Field label="שם מוסד">
+            <input style={inputStyle} value={form.name} onChange={e => set('name', e.target.value)} placeholder="שם המוסד" />
+          </Field>
+        </div>
         <Field label="סיווג">
           <select style={selectStyle} value={form.crm_class} onChange={e => set('crm_class', e.target.value)}>
             <option value="">— בחר —</option>
